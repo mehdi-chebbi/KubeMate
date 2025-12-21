@@ -453,6 +453,22 @@ class ApiService {
       return { success: false, error: error.response?.data?.error || 'Failed to get pods' };
     }
   }
+
+  async getPodLogs(namespace, podName) {
+    try {
+      const response = await this.api.get(`/api/pods/${namespace}/${podName}/logs`);
+      return { 
+        success: true, 
+        logs: response.data.logs,
+        podName: response.data.pod_name,
+        namespace: response.data.namespace,
+        timestamp: response.data.timestamp
+      };
+    } catch (error) {
+      console.error('Get pod logs error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get pod logs' };
+    }
+  }
 }
 
 export const apiService = new ApiService();

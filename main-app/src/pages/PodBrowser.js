@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Search, RefreshCw, Server, Activity, AlertCircle, CheckCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, RefreshCw, Server, Activity, AlertCircle, CheckCircle, FileText, X, Copy, Download } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
 const PodBrowser = ({ user, onLogout }) => {
@@ -9,6 +9,9 @@ const PodBrowser = ({ user, onLogout }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedNamespaces, setExpandedNamespaces] = useState(new Set());
   const [lastRefresh, setLastRefresh] = useState(null);
+  
+  // Logs modal state
+  const [logsModal, setLogsModal] = useState({ isOpen: false, podName: '', namespace: '', logs: '', loading: false, error: '' });
 
   useEffect(() => {
     fetchPods();
@@ -40,6 +43,66 @@ const PodBrowser = ({ user, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchPodLogs = async (namespace, podName) => {
+    setLogsModal({ isOpen: true, podName, namespace, logs: '', loading: true, error: '' });
+    
+    try {
+      const response = await apiService.getPodLogs(namespace, podName);
+      
+      if (response.success) {
+        setLogsModal({ 
+          isOpen: true, 
+          podName: response.podName, 
+          namespace: response.namespace, 
+          logs: response.logs, 
+          loading: false, 
+          error: '' 
+        });
+      } else {
+        setLogsModal({ 
+          isOpen: true, 
+          podName, 
+          namespace, 
+          logs: '', 
+          loading: false, 
+          error: response.error || 'Failed to fetch pod logs' 
+        });
+      }
+      
+    } catch (error) {
+      console.error('Failed to fetch pod logs:', error);
+      setLogsModal({ 
+        isOpen: true, 
+        podName, 
+        namespace, 
+        logs: '', 
+        loading: false, 
+        error: 'Failed to fetch pod logs. Please try again.' 
+      });
+    }
+  };
+
+  const closeLogsModal = () => {
+    setLogsModal({ isOpen: false, podName: '', namespace: '', logs: '', loading: false, error: '' });
+  };
+
+  const copyLogsToClipboard = () => {
+    navigator.clipboard.writeText(logsModal.logs);
+    // You could add a toast notification here
+  };
+
+  const downloadLogs = () => {
+    const blob = new Blob([logsModal.logs], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${logsModal.podName}-${logsModal.namespace}-logs.txt`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   const toggleNamespace = (namespaceName) => {
@@ -228,7 +291,7 @@ const PodBrowser = ({ user, onLogout }) => {
                         {namespace.pods.map((pod) => (
                           <div
                             key={pod.name}
-                            className="flex items-center justify-between p-4 bg-k8s-dark/20 rounded-lg hover:bg-k8s-dark/30 transition-colors cursor-pointer"
+                            className="flex items-center justify-between p-4 bg-k8s-dark/20 rounded-lg hover:bg-k8s-dark/30 transition-colors"
                           >
                             <div className="flex items-center gap-3">
                               {getStatusIcon(pod.status)}
@@ -244,8 +307,21 @@ const PodBrowser = ({ user, onLogout }) => {
                                 </div>
                               </div>
                             </div>
-                            <div className={`text-sm font-medium ${getStatusColor(pod.status)}`}>
-                              {pod.status}
+                            <div className="flex items-center gap-3">
+                              <div className={`text-sm font-medium ${getStatusColor(pod.status)}`}>
+                                {pod.status}
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  fetchPodLogs(namespace.name, pod.name);
+                                }}
+                                className="k8s-button-secondary flex items-center gap-2 p-2"
+                                title="View pod logs"
+                              >
+                                <FileText className="w-4 h-4" />
+                                Logs
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -257,6 +333,87 @@ const PodBrowser = ({ user, onLogout }) => {
             )}
           </div>
         </div>
+        
+        {/* Logs Modal */}
+        {logsModal.isOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="k8s-card max-w-5xl w-full h-[85vh] max-h-[85vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-white/10">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-k8s-blue" />
+                    Pod Logs
+                  </h2>
+                  <p className="text-k8s-gray text-sm mt-1">
+                    {logsModal.podName} in namespace: {logsModal.namespace}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={copyLogsToClipboard}
+                    disabled={!logsModal.logs || logsModal.loading}
+                    className="k8s-button-secondary flex items-center gap-2"
+                    title="Copy logs to clipboard"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </button>
+                  <button
+                    onClick={downloadLogs}
+                    disabled={!logsModal.logs || logsModal.loading}
+                    className="k8s-button-secondary flex items-center gap-2"
+                    title="Download logs"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                  <button
+                    onClick={closeLogsModal}
+                    className="k8s-button-secondary p-2"
+                    title="Close logs"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              
+              {/* Modal Content */}
+              <div className="flex-1 p-6 overflow-hidden min-h-0">
+                {logsModal.loading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <RefreshCw className="w-6 h-6 text-k8s-blue animate-spin mr-3" />
+                    <span className="text-k8s-gray">Loading pod logs...</span>
+                  </div>
+                ) : logsModal.error ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                      <p className="text-red-400 mb-4">{logsModal.error}</p>
+                      <button onClick={closeLogsModal} className="k8s-button-primary">
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col min-h-0">
+                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                      <span className="text-k8s-gray text-sm">
+                        Showing last {logsModal.logs.split('\n').length} lines
+                      </span>
+                      <span className="text-k8s-gray text-sm">
+                        {logsModal.timestamp && new Date(logsModal.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex-1 bg-black/50 rounded-lg p-4 overflow-y-auto font-mono text-sm text-gray-300 border border-white/10 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+                      <pre className="whitespace-pre-wrap">{logsModal.logs || 'No logs available'}</pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

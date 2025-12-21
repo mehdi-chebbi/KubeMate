@@ -11,6 +11,7 @@ from k8s_client import K8sClient
 from llm_client import LLMClientFactory
 from question_classifier import HybridQuestionClassifier, QuestionType
 from database import Database
+from command_verifier import CommandVerifier
 from functools import wraps
 
 # Configure logging
@@ -847,6 +848,73 @@ def get_pods():
             'namespaces': []
         }), 500
 
+@app.route('/api/pods/<namespace>/<pod_name>/logs', methods=['GET'])
+@require_user_auth
+def get_pod_logs(namespace, pod_name):
+    """Get logs for a specific pod"""
+    try:
+        # Get active kubeconfig and create appropriate K8sClient
+        active_kubeconfig = app.db.get_active_kubeconfig()
+        if active_kubeconfig:
+            k8s_client_to_use = K8sClient(kubeconfig_path=active_kubeconfig['path'])
+            logger.info(f"Using active kubeconfig: {active_kubeconfig['name']} at {active_kubeconfig['path']}")
+        else:
+            k8s_client_to_use = app.k8s_client  # Fallback to default client
+            logger.warning("No active kubeconfig found, using default client")
+        
+        # Get pod logs
+        result = k8s_client_to_use.get_pod_logs(namespace, pod_name)
+        
+        if result['success']:
+            # Log activity
+            app.db.log_activity(
+                user_id=request.current_user['id'],
+                action_type='view_pod_logs',
+                command=f"kubectl logs {pod_name} -n {namespace}",
+                success=True
+            )
+            
+            return jsonify({
+                'success': True,
+                'logs': result['logs'],
+                'pod_name': pod_name,
+                'namespace': namespace,
+                'timestamp': result['timestamp']
+            })
+        else:
+            # Log failed activity
+            app.db.log_activity(
+                user_id=request.current_user['id'],
+                action_type='view_pod_logs',
+                command=f"kubectl logs {pod_name} -n {namespace}",
+                success=False,
+                error_message=result.get('error', 'Unknown error')
+            )
+            
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to retrieve pod logs'),
+                'logs': ''
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error getting pod logs: {str(e)}")
+        
+        # Log failed activity
+        app.db.log_activity(
+            user_id=request.current_user['id'],
+            action_type='view_pod_logs',
+            command=f"kubectl logs {pod_name} -n {namespace}",
+            success=False,
+            error_message=str(e)
+        )
+        
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve pod logs',
+            'logs': ''
+        }), 500
+
 # ==================== CHAT ENDPOINT ====================
 
 @app.route('/chat', methods=['POST'])
@@ -1041,7 +1109,34 @@ def chat():
         executed_commands = []
         
         for cmd in suggested_commands:
-            logger.info(f"Executing command: {cmd}")
+            logger.info(f"Verifying command: {cmd}")
+            
+            # Verify command safety before execution
+            is_safe, safety_reason = CommandVerifier.is_safe_command(cmd)
+            if not is_safe:
+                logger.warning(f"Command blocked by safety verifier: {cmd} - Reason: {safety_reason}")
+                
+                # Log blocked command attempt
+                app.db.log_activity(
+                    user_id=user_id,
+                    action_type='command_blocked',
+                    command=cmd,
+                    classification_type=classification.question_type.value,
+                    success=False,
+                    error_message=f"Safety check failed: {safety_reason}"
+                )
+                
+                # Store blocked command info
+                command_outputs[cmd] = {
+                    'success': False,
+                    'error': f"Command blocked for safety reasons: {safety_reason}",
+                    'safety_blocked': True,
+                    'stdout': '',
+                    'stderr': f"Safety verification failed: {safety_reason}"
+                }
+                continue  # Skip to next command
+            
+            logger.info(f"Command verified as safe: {cmd}")
             # Execute the command (remove 'kubectl' prefix for the k8s_client)
             cmd_parts = cmd.split()[1:]  # Remove 'kubectl'
             output = k8s_client_to_use._run_kubectl_command(cmd_parts)
@@ -1084,7 +1179,34 @@ def chat():
                 logger.info(f"Model suggested follow-up commands: {follow_up_commands}")
                 
                 for cmd in follow_up_commands:
-                    logger.info(f"Executing follow-up command: {cmd}")
+                    logger.info(f"Verifying follow-up command: {cmd}")
+                    
+                    # Verify follow-up command safety before execution
+                    is_safe, safety_reason = CommandVerifier.is_safe_command(cmd)
+                    if not is_safe:
+                        logger.warning(f"Follow-up command blocked by safety verifier: {cmd} - Reason: {safety_reason}")
+                        
+                        # Log blocked follow-up command attempt
+                        app.db.log_activity(
+                            user_id=user_id,
+                            action_type='followup_command_blocked',
+                            command=cmd,
+                            classification_type=classification.question_type.value,
+                            success=False,
+                            error_message=f"Safety check failed: {safety_reason}"
+                        )
+                        
+                        # Store blocked follow-up command info
+                        command_outputs[cmd] = {
+                            'success': False,
+                            'error': f"Follow-up command blocked for safety reasons: {safety_reason}",
+                            'safety_blocked': True,
+                            'stdout': '',
+                            'stderr': f"Safety verification failed: {safety_reason}"
+                        }
+                        continue  # Skip to next command
+                    
+                    logger.info(f"Follow-up command verified as safe: {cmd}")
                     cmd_parts = cmd.split()[1:]  # Remove 'kubectl'
                     output = k8s_client_to_use._run_kubectl_command(cmd_parts)
                     command_outputs[cmd] = output

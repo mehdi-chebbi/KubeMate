@@ -193,6 +193,32 @@ class K8sClient:
         """Describe a specific pod"""
         return self._run_kubectl_command(['describe', 'pod', pod_name, '-n', namespace])
     
+    def get_pod_logs(self, namespace: str, pod_name: str, tail_lines: int = 1000) -> Dict[str, Any]:
+        """Get logs for a specific pod"""
+        try:
+            result = self._run_kubectl_command([
+                'logs', pod_name, '-n', namespace, '--tail', str(tail_lines)
+            ])
+            
+            if result['success']:
+                return {
+                    'success': True,
+                    'logs': result['stdout'],
+                    'timestamp': result['timestamp']
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': result.get('stderr', 'Failed to get pod logs'),
+                    'logs': ''
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'logs': ''
+            }
+    
     def describe_deployment(self, deployment_name: str, namespace: str) -> Dict[str, Any]:
         """Describe a specific deployment"""
         return self._run_kubectl_command(['describe', 'deployment', deployment_name, '-n', namespace])
