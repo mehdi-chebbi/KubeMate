@@ -29,6 +29,9 @@ const PodBrowser = ({ user, onLogout }) => {
     fileContent: '',
     viewingFile: false
   });
+  
+  // File search state
+  const [fileSearchTerm, setFileSearchTerm] = useState('');
 
   useEffect(() => {
     fetchPods();
@@ -183,6 +186,7 @@ const PodBrowser = ({ user, onLogout }) => {
   };
 
   const openFileBrowser = async (namespace, podName) => {
+    setFileSearchTerm(''); // Reset search when opening file browser
     setFileBrowserModal({ 
       isOpen: true, 
       podName, 
@@ -227,6 +231,7 @@ const PodBrowser = ({ user, onLogout }) => {
 
   const navigateToDirectory = async (path) => {
     setFileBrowserModal(prev => ({ ...prev, loading: true, error: '' }));
+    setFileSearchTerm(''); // Reset search when navigating
     
     try {
       const response = await apiService.browsePodFiles(fileBrowserModal.namespace, fileBrowserModal.podName, path);
@@ -904,19 +909,47 @@ const PodBrowser = ({ user, onLogout }) => {
                           Current: {fileBrowserModal.currentPath}
                         </span>
                       </div>
-                      <span className="text-k8s-gray text-sm">
-                        {fileBrowserModal.files.filter(file => file.name !== '.' && file.name !== '..').length} items
-                      </span>
+                      <div className="flex items-center gap-4">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-k8s-gray w-4 h-4" />
+                          <input
+                            type="text"
+                            placeholder="Search files..."
+                            value={fileSearchTerm}
+                            onChange={(e) => setFileSearchTerm(e.target.value)}
+                            className="k8s-input pl-10 w-48 text-sm"
+                          />
+                        </div>
+                        <span className="text-k8s-gray text-sm">
+                          {(() => {
+                            const filteredFiles = fileBrowserModal.files.filter(file => 
+                              file.name !== '.' && 
+                              file.name !== '..' && 
+                              file.name.toLowerCase().includes(fileSearchTerm.toLowerCase())
+                            );
+                            return `${filteredFiles.length} items`;
+                          })()}
+                        </span>
+                      </div>
                     </div>
                     
                     {/* Files List */}
                     <div className="flex-1 bg-black/50 rounded-lg p-4 overflow-y-auto border border-white/10 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
                       {(() => {
-                        const filteredFiles = fileBrowserModal.files.filter(file => file.name !== '.' && file.name !== '..');
+                        const filteredFiles = fileBrowserModal.files.filter(file => 
+                          file.name !== '.' && 
+                          file.name !== '..' && 
+                          file.name.toLowerCase().includes(fileSearchTerm.toLowerCase())
+                        );
                         return filteredFiles.length === 0 ? (
                           <div className="text-center text-k8s-gray py-8">
                             <Folder className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <p>This directory is empty</p>
+                            <p>
+                              {fileSearchTerm 
+                                ? 'No files found matching your search.' 
+                                : 'This directory is empty.'
+                              }
+                            </p>
                           </div>
                         ) : (
                           <div className="space-y-1">
