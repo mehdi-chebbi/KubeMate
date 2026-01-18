@@ -6,10 +6,143 @@ import bcrypt
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 import json
+import os
+from pathlib import Path
+import yaml
+from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
+# ==================== ENCRYPTION UTILITIES ====================
+
+def _get_encryption_key():
+    """Get or generate encryption key"""
+    key = os.environ.get('K8S_BOT_ENCRYPTION_KEY')
+    if key:
+        return key.encode()
+    else:
+        # Generate a new key and log warning
+        key = Fernet.generate_key()
+        logger.warning(f"No K8S_BOT_ENCRYPTION_KEY environment variable found. Generated new key: {key.decode()}")
+        logger.warning("Set this environment variable to persist encryption across restarts!")
+        return key
+
+_cipher_suite = None
+
+def get_cipher_suite():
+    """Get singleton cipher suite instance"""
+    global _cipher_suite
+    if _cipher_suite is None:
+        key = _get_encryption_key()
+        _cipher_suite = Fernet(key)
+    return _cipher_suite
+
+def encrypt_token(token: str) -> str:
+    """Encrypt service account token using Fernet (AES-128 + HMAC)"""
+    if not token:
+        return None
+    cipher_suite = get_cipher_suite()
+    return cipher_suite.encrypt(token.encode()).decode()
+
+def decrypt_token(encrypted_token: str) -> str:
+    """Decrypt service account token using Fernet (AES-128 + HMAC)"""
+    if not encrypted_token:
+        return None
+    cipher_suite = get_cipher_suite()
+    return cipher_suite.decrypt(encrypted_token.encode()).decode()
+
+# ==================== KUBECONFIG GENERATOR ====================
+
+class KubeconfigGenerator:
+    """Generate kubeconfig files from service account credentials"""
+    
+    CONFIGS_DIR = Path(__file__).parent / "kubeconfigs"
+    
+    @classmethod
+    def _ensure_configs_dir(cls):
+        """Create kubeconfigs directory if it doesn't exist"""
+        cls.CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    @classmethod
+    def generate_filename(cls, name: str, config_id: int) -> str:
+        """Generate unique filename from name and ID"""
+        # Sanitize name: lowercase, replace spaces with hyphens
+        safe_name = name.lower().replace(' ', '-').replace('_', '-')
+        # Remove non-alphanumeric chars except hyphens
+        safe_name = ''.join(c if c.isalnum() or c == '-' else '' for c in safe_name)
+        return f"{safe_name}-{config_id}.yaml"
+    
+    @classmethod
+    def generate_kubeconfig(cls, config_id: int, name: str, 
+                          cluster_url: str, token: str,
+                          ca_cert: str = None, 
+                          namespace: str = None) -> str:
+        """
+        Generate kubeconfig file from SA credentials
+        
+        Returns: Absolute path to generated file
+        """
+        cls._ensure_configs_dir()
+        
+        filename = cls.generate_filename(name, config_id)
+        filepath = cls.CONFIGS_DIR / filename
+        
+        # Build kubeconfig YAML
+        kubeconfig_data = {
+            'apiVersion': 'v1',
+            'kind': 'Config',
+            'clusters': [{
+                'name': name,
+                'cluster': {
+                    'server': cluster_url
+                }
+            }],
+            'users': [{
+                'name': f"{name}-sa",
+                'user': {
+                    'token': token
+                }
+            }],
+            'contexts': [{
+                'name': name,
+                'context': {
+                    'cluster': name,
+                    'user': f"{name}-sa"
+                }
+            }]
+        }
+        
+        # Add CA certificate if provided
+        if ca_cert:
+            kubeconfig_data['clusters'][0]['cluster']['certificate-authority-data'] = ca_cert
+        
+        # Add namespace if provided
+        if namespace:
+            kubeconfig_data['contexts'][0]['context']['namespace'] = namespace
+        
+        # Set current context
+        kubeconfig_data['current-context'] = name
+        
+        # Write to file with secure permissions
+        with open(filepath, 'w') as f:
+            yaml.dump(kubeconfig_data, f, default_flow_style=False)
+        
+        # Set secure permissions (owner read-only)
+        os.chmod(filepath, 0o600)
+        
+        logger.info(f"Generated kubeconfig file: {filepath}")
+        return str(filepath)
+    
+    @classmethod
+    def delete_config(cls, filepath: str):
+        """Delete kubeconfig file"""
+        if filepath and os.path.exists(filepath):
+            os.remove(filepath)
+            logger.info(f"Deleted kubeconfig file: {filepath}")
+
+
 class Database:
+
     """Database manager for K8s Audit Bot using PostgreSQL"""
     
     def __init__(self, host='localhost', port=5432, database='k8s_bot', 
@@ -307,7 +440,12 @@ class Database:
             CREATE TABLE kubeconfigs (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) UNIQUE NOT NULL,
-                path TEXT NOT NULL,
+                path TEXT,
+                connection_type VARCHAR(50) NOT NULL DEFAULT 'file',
+                cluster_url TEXT,
+                sa_token_encrypted TEXT,
+                ca_certificate TEXT,
+                namespace VARCHAR(255),
                 description TEXT,
                 is_active BOOLEAN DEFAULT FALSE,
                 is_default BOOLEAN DEFAULT FALSE,
@@ -329,9 +467,9 @@ class Database:
         """)
         existing_columns = {row[0] for row in cursor.fetchall()}
         
-        required_columns = {'id', 'name', 'path', 'description', 'is_active', 
-                          'is_default', 'created_at', 'updated_at', 'created_by',
-                          'last_tested', 'test_status', 'test_message'}
+        required_columns = {'id', 'name', 'path', 'connection_type', 'cluster_url', 'sa_token_encrypted',
+                          'ca_certificate', 'namespace', 'description', 'is_active', 'is_default', 
+                          'created_at', 'updated_at', 'created_by', 'last_tested', 'test_status', 'test_message'}
         
         missing = required_columns - existing_columns
         if missing:
@@ -1290,6 +1428,130 @@ class Database:
                 cursor.close()
                 self._put_connection(conn)
     
+    def create_sa_kubeconfig(self, name: str, cluster_url: str, token: str,
+                           ca_cert: str = None, namespace: str = None,
+                           description: str = None, created_by: int = None,
+                           is_default: bool = False) -> Optional[int]:
+        """Create a service account based kubeconfig"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # If setting as default, unset all other defaults
+            if is_default:
+                cursor.execute("UPDATE kubeconfigs SET is_default = FALSE WHERE is_default = TRUE")
+            
+            # Encrypt token
+            encrypted_token = encrypt_token(token)
+            
+            cursor.execute("""
+                INSERT INTO kubeconfigs (name, connection_type, cluster_url, sa_token_encrypted, 
+                                      ca_certificate, namespace, description, is_default, 
+                                      created_at, updated_at, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (name, 'service_account', cluster_url, encrypted_token, ca_cert, 
+                   namespace, description, is_default, datetime.now(), datetime.now(), created_by))
+            
+            result = cursor.fetchone()
+            conn.commit()
+            
+            if result:
+                kubeconfig_id = result['id']
+                # Generate kubeconfig file now that we have the ID
+                config_path = KubeconfigGenerator.generate_kubeconfig(
+                    kubeconfig_id, name, cluster_url, token, ca_cert, namespace
+                )
+                
+                # Update the record with the generated file path
+                cursor.execute("""
+                    UPDATE kubeconfigs SET path = %s WHERE id = %s
+                """, (config_path, kubeconfig_id))
+                conn.commit()
+                
+                logger.info(f"Created SA kubeconfig '{name}' (ID: {kubeconfig_id}) at {config_path}")
+                return kubeconfig_id
+            return None
+            
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Failed to create SA kubeconfig: {str(e)}")
+            return None
+        finally:
+            if conn:
+                cursor.close()
+                self._put_connection(conn)
+    
+    def update_sa_kubeconfig(self, kubeconfig_id: int, cluster_url: str = None,
+                           token: str = None, ca_cert: str = None, 
+                           namespace: str = None) -> bool:
+        """Update SA kubeconfig - deletes old config, creates new one"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get existing config
+            cursor.execute("SELECT * FROM kubeconfigs WHERE id = %s", (kubeconfig_id,))
+            config = cursor.fetchone()
+            
+            if not config:
+                logger.error(f"Kubeconfig {kubeconfig_id} not found")
+                return False
+            
+            # Get current values if not provided
+            if cluster_url is None:
+                cluster_url = config['cluster_url']
+            if token is None:
+                token = decrypt_token(config['sa_token_encrypted'])
+            if ca_cert is None:
+                ca_cert = config['ca_certificate']
+            if namespace is None:
+                namespace = config['namespace']
+            
+            # Delete old kubeconfig file
+            old_path = config['path']
+            if old_path:
+                KubeconfigGenerator.delete_config(old_path)
+            
+            # Encrypt new token if provided
+            encrypted_token = encrypt_token(token) if token else config['sa_token_encrypted']
+            
+            # Generate new kubeconfig with updated data
+            new_path = KubeconfigGenerator.generate_kubeconfig(
+                kubeconfig_id,
+                config['name'],
+                cluster_url,
+                token,  # Decrypted for generation
+                ca_cert,
+                namespace
+            )
+            
+            # Update database record
+            cursor.execute("""
+                UPDATE kubeconfigs 
+                SET cluster_url = %s, sa_token_encrypted = %s, ca_certificate = %s, 
+                    namespace = %s, path = %s, updated_at = %s
+                WHERE id = %s
+            """, (cluster_url, encrypted_token, ca_cert, namespace, new_path, 
+                   datetime.now(), kubeconfig_id))
+            
+            conn.commit()
+            logger.info(f"Updated SA kubeconfig {kubeconfig_id}: {config['name']}")
+            return True
+            
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Failed to update SA kubeconfig {kubeconfig_id}: {str(e)}")
+            return False
+        finally:
+            if conn:
+                cursor.close()
+                self._put_connection(conn)
+
     def update_kubeconfig(self, kubeconfig_id: int, name: str = None, path: str = None,
                          description: str = None, is_default: bool = None) -> bool:
         """Update a kubeconfig entry"""
@@ -1347,12 +1609,21 @@ class Database:
                 self._put_connection(conn)
     
     def delete_kubeconfig(self, kubeconfig_id: int) -> bool:
-        """Delete a kubeconfig entry"""
+        """Delete a kubeconfig entry and associated file if SA type"""
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
+            # Get the kubeconfig first to check if it's SA type
+            cursor.execute("SELECT connection_type, path FROM kubeconfigs WHERE id = %s", (kubeconfig_id,))
+            config = cursor.fetchone()
+            
+            # Delete generated kubeconfig file if SA type
+            if config and config['connection_type'] == 'service_account' and config['path']:
+                KubeconfigGenerator.delete_config(config['path'])
+            
+            # Delete from database
             cursor.execute("DELETE FROM kubeconfigs WHERE id = %s", (kubeconfig_id,))
             
             conn.commit()

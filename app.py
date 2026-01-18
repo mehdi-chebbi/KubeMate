@@ -1534,29 +1534,61 @@ def get_kubeconfigs():
 @app.route('/admin/kubeconfigs', methods=['POST'])
 @require_admin_auth
 def create_kubeconfig():
-    """Create new kubeconfig (admin only)"""
+    """Create new kubeconfig (admin only) - supports file and service account types"""
     try:
         data = request.get_json()
         
-        if not data or 'name' not in data or 'path' not in data:
-            return jsonify({'error': 'Name and path are required'}), 400
+        if not data or 'name' not in data or 'connection_type' not in data:
+            return jsonify({'error': 'Name and connection type are required'}), 400
         
         name = data['name'].strip()
-        path = data['path'].strip()
+        connection_type = data.get('connection_type', 'file').strip()
         description = data.get('description', '').strip()
         is_default = data.get('is_default', False)
         created_by = data.get('created_by')  # Optional user ID
         
-        if not name or not path:
-            return jsonify({'error': 'Name and path cannot be empty'}), 400
+        if not name:
+            return jsonify({'error': 'Name cannot be empty'}), 400
         
-        kubeconfig_id = app.db.create_kubeconfig(
-            name=name,
-            path=path,
-            description=description,
-            created_by=created_by,
-            is_default=is_default
-        )
+        if connection_type not in ['file', 'service_account']:
+            return jsonify({'error': 'Invalid connection type. Must be "file" or "service_account"'}), 400
+        
+        kubeconfig_id = None
+        
+        if connection_type == 'service_account':
+            # Service Account based config
+            cluster_url = data.get('cluster_url', '').strip()
+            token = data.get('sa_token', '').strip()
+            ca_cert = data.get('ca_certificate', '').strip()
+            namespace = data.get('namespace', '').strip()
+            
+            if not cluster_url or not token:
+                return jsonify({'error': 'Cluster URL and token are required for service account connection'}), 400
+            
+            kubeconfig_id = app.db.create_sa_kubeconfig(
+                name=name,
+                cluster_url=cluster_url,
+                token=token,
+                ca_cert=ca_cert if ca_cert else None,
+                namespace=namespace if namespace else None,
+                description=description,
+                created_by=created_by,
+                is_default=is_default
+            )
+        else:
+            # File based config (existing logic)
+            path = data.get('path', '').strip()
+            
+            if not path:
+                return jsonify({'error': 'Path is required for file-based connection'}), 400
+            
+            kubeconfig_id = app.db.create_kubeconfig(
+                name=name,
+                path=path,
+                description=description,
+                created_by=created_by,
+                is_default=is_default
+            )
         
         if kubeconfig_id:
             # Clear health cache as new kubeconfig might affect cluster connectivity
@@ -1593,25 +1625,49 @@ def get_kubeconfig(kubeconfig_id):
 @app.route('/admin/kubeconfigs/<int:kubeconfig_id>', methods=['PUT'])
 @require_admin_auth
 def update_kubeconfig(kubeconfig_id):
-    """Update a kubeconfig (admin only)"""
+    """Update a kubeconfig (admin only) - supports both file and SA types"""
     try:
+        # Get existing config to check type
+        existing_config = app.db.get_kubeconfig(kubeconfig_id)
+        if not existing_config:
+            return jsonify({'error': 'Kubeconfig not found'}), 404
+        
         data = request.get_json()
         
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        name = data.get('name')
-        path = data.get('path')
-        description = data.get('description')
-        is_default = data.get('is_default')
+        success = False
+        connection_type = existing_config.get('connection_type', 'file')
         
-        success = app.db.update_kubeconfig(
-            kubeconfig_id=kubeconfig_id,
-            name=name,
-            path=path,
-            description=description,
-            is_default=is_default
-        )
+        if connection_type == 'service_account':
+            # Update Service Account based config
+            cluster_url = data.get('cluster_url')
+            token = data.get('sa_token')
+            ca_cert = data.get('ca_certificate')
+            namespace = data.get('namespace')
+            
+            success = app.db.update_sa_kubeconfig(
+                kubeconfig_id=kubeconfig_id,
+                cluster_url=cluster_url,
+                token=token,
+                ca_cert=ca_cert,
+                namespace=namespace
+            )
+        else:
+            # Update File based config (existing logic)
+            name = data.get('name')
+            path = data.get('path')
+            description = data.get('description')
+            is_default = data.get('is_default')
+            
+            success = app.db.update_kubeconfig(
+                kubeconfig_id=kubeconfig_id,
+                name=name,
+                path=path,
+                description=description,
+                is_default=is_default
+            )
         
         if success:
             # Clear health cache as kubeconfig changes might affect cluster connectivity
@@ -2150,7 +2206,6 @@ def get_active_llm_config():
         return jsonify({'error': 'Failed to get active LLM configuration'}), 500
 
 # ==================== TOPOLOGY ENDPOINTS ====================
-
 @app.route('/topology/nodes', methods=['GET'])
 @require_user_auth
 def get_topology_nodes():
@@ -2177,7 +2232,6 @@ def get_topology_nodes():
                 'nodes': []
             }), 500
         
-        # Parse node data and format for topology
         nodes_data = []
         
         if nodes_result.get('stdout'):
@@ -2190,6 +2244,9 @@ def get_topology_nodes():
                     metadata = item.get('metadata', {})
                     spec = item.get('spec', {})
                     status = item.get('status', {})
+                    
+                    # Always initialize taints
+                    taints = spec.get('taints', [])
                     
                     # Extract node information
                     node_info = {
@@ -2210,45 +2267,33 @@ def get_topology_nodes():
                         'addresses': status.get('addresses', []),
                         'allocatable': status.get('allocatable', {}),
                         'capacity': status.get('capacity', {}),
-                        'images': status.get('images', [])
+                        'images': status.get('images', []),
+                        'taints': taints
                     }
                     
-                    # PROFESSIONAL NODE ROLE DETECTION - PRECISE LOGIC
+                    # Node role detection
                     labels = metadata.get('labels', {})
                     logger.info(f"Node {node_info['name']} labels: {labels}")
                     
-                    # METHOD 1: Check standard Kubernetes role labels (PRIMARY)
-                    if labels.get('node-role.kubernetes.io/control-plane'):
-                        node_info['role'] = 'master'
-                    elif labels.get('node-role.kubernetes.io/master'):
+                    # Primary: check role labels
+                    if labels.get('node-role.kubernetes.io/control-plane') or labels.get('node-role.kubernetes.io/master'):
                         node_info['role'] = 'master'
                     elif labels.get('node-role.kubernetes.io/worker'):
                         node_info['role'] = 'worker'
-                    
-                    # METHOD 2: Check node taints (SECONDARY - more reliable)
                     else:
-                        taints = spec.get('taints', [])
-                        has_control_plane_taint = False
-                        
-                        for taint in taints:
-                            taint_key = taint.get('key', '')
-                            if taint_key in ['node-role.kubernetes.io/control-plane', 'node-role.kubernetes.io/master']:
-                                has_control_plane_taint = True
-                                break
-                        
+                        # Secondary: check taints
+                        has_control_plane_taint = any(
+                            t.get('key', '') in ['node-role.kubernetes.io/control-plane', 'node-role.kubernetes.io/master']
+                            for t in taints
+                        )
                         if has_control_plane_taint:
                             node_info['role'] = 'master'
                         else:
-                            # METHOD 3: Only use system pods as LAST RESORT for edge cases
-                            # AND only if we have no other information
+                            # Fallback: system pods
                             if not labels and not taints:
                                 node_info['role'] = determine_role_from_system_pods(node_info['name'], k8s_client)
                             else:
-                                # DEFAULT: If no explicit role, assume worker
                                 node_info['role'] = 'worker'
-                    
-                    # Store taint information for debugging
-                    node_info['taints'] = taints
                     
                     # Extract IP addresses
                     ip_addresses = []
@@ -2260,26 +2305,19 @@ def get_topology_nodes():
                             })
                     node_info['ip_addresses'] = ip_addresses
                     
-                    # Get node conditions for health status
+                    # Node health status
                     conditions = status.get('conditions', [])
                     node_info['health_status'] = 'Unknown'
-                    
                     for condition in conditions:
                         if condition.get('type') == 'Ready':
-                            if condition.get('status') == 'True':
-                                node_info['health_status'] = 'Ready'
-                            else:
-                                node_info['health_status'] = 'NotReady'
+                            node_info['health_status'] = 'Ready' if condition.get('status') == 'True' else 'NotReady'
                             break
                     
-                    # Calculate resource usage percentages
+                    # Resource usage placeholders
                     allocatable = status.get('allocatable', {})
                     capacity = status.get('capacity', {})
-                    
-                    if 'cpu' in allocatable and 'cpu' in capacity:
-                        node_info['cpu_usage_percent'] = 0  # Will be calculated from metrics later
-                    if 'memory' in allocatable and 'memory' in capacity:
-                        node_info['memory_usage_percent'] = 0  # Will be calculated from metrics later
+                    node_info['cpu_usage_percent'] = 0
+                    node_info['memory_usage_percent'] = 0
                     
                     nodes_data.append(node_info)
                     
@@ -2295,7 +2333,7 @@ def get_topology_nodes():
             'timestamp': datetime.now().isoformat(),
             'kubeconfig': active_kubeconfig['name']
         })
-        
+    
     except Exception as e:
         logger.error(f"Error getting topology nodes: {str(e)}")
         return jsonify({'error': 'Failed to get topology nodes', 'nodes': []}), 500
