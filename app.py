@@ -1139,23 +1139,24 @@ def read_pod_file(namespace, pod_name):
 @require_user_auth
 def chat():
     """
-    Enhanced intelligent chat endpoint with hybrid classification and database integration
+    AI-first chat endpoint - AI decides when to suggest commands
+    No pattern classification - pure AI intelligence
     """
     try:
         data = request.get_json()
-        
+
         if not data or 'message' not in data:
             return jsonify({'error': 'Message is required'}), 400
-        
+
         user_message = data['message']
         session_id = data.get('session_id', 'default')
         user_id = request.current_user['id']  # User ID from authenticated session
-        
+
         logger.info(f"Received message from user {user_id}: {user_message}")
-        
+
         # Get user preferences
         user_prefs = app.db.get_user_preferences(user_id)
-        
+
         # Initialize conversation history for session
         if session_id not in app.conversation_history:
             # Load from database
@@ -1168,23 +1169,23 @@ def chat():
                 }
                 for msg in db_history
             ]
-        
+
         # Add user message to history
         app.conversation_history[session_id].append({
             'role': 'user',
             'message': user_message,
             'timestamp': datetime.now().isoformat()
         })
-        
+
         # Get active LLM configuration from database
         active_llm_config = app.db.get_active_llm_config()
-        
+
         if not active_llm_config:
             return jsonify({
-                'error': 'No active LLM configuration found. Please add and activate an LLM configuration in the settings.',
+                'error': 'No active LLM configuration found. Please add and activate an LLM configuration in the admin panel.',
                 'requires_setup': True
             }), 400
-        
+
         # Initialize LLM provider with active configuration
         try:
             provider_config = {
@@ -1193,61 +1194,80 @@ def chat():
                 'endpoint_url': active_llm_config.get('endpoint_url'),
                 'model': active_llm_config.get('model') or 'default'
             }
-            
+
             llm_provider = LLMClientFactory.create_provider(provider_config)
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize LLM provider: {str(e)}")
             return jsonify({
                 'error': f'Failed to initialize LLM provider: {str(e)}',
                 'requires_setup': True
             }), 500
-        
-        # Update usage statistics for the LLM configuration
+
+        # Update usage statistics for LLM configuration
         app.db.update_api_key_usage(active_llm_config['id'])
-        
-        # Step 1: Classify question using hybrid approach
-        logger.info("Step 1: Classifying question with hybrid approach...")
-        classification = app.hybrid_classifier.classify_question(
-            message=user_message,
-            conversation_history=app.conversation_history[session_id],
-            ai_client=llm_provider
-        )
-        
-        logger.info(f"Classification result: {classification.question_type.value} "
-                   f"(score: {classification.complexity_score:.2f}, "
-                   f"confidence: {classification.confidence:.2f}, "
-                   f"method: {classification.classification_method})")
-        
-        # Step 2: Determine command strategy based on classification
-        max_commands = classification.suggested_max_commands
-        follow_up_allowed = classification.follow_up_allowed
-        
-        # Apply user preferences if they exist
-        if user_prefs and user_prefs.get('max_commands_preference'):
-            max_commands = min(max_commands, user_prefs['max_commands_preference'])
-        
-        # Step 3: Ask model to suggest appropriate commands based on classification
-        logger.info("Step 3: Requesting command suggestions from model...")
-        suggested_commands = llm_provider.suggest_commands(
+
+        # Step 1: Let AI decide what to do - chat or investigation
+        logger.info("Step 1: AI deciding response type...")
+        ai_response = llm_provider.generate_intelligent_response(
             user_question=user_message,
             conversation_history=app.conversation_history[session_id]
         )
-        
-        # Limit commands based on classification
-        if suggested_commands and len(suggested_commands) > max_commands:
-            logger.info(f"Limiting commands from {len(suggested_commands)} to {max_commands} based on classification")
-            suggested_commands = suggested_commands[:max_commands]
-        
-        if not suggested_commands:
-            logger.info("No commands needed - providing direct advice response")
-            # Use analysis method directly without command outputs
-            bot_response = llm_provider.analyze_command_outputs(
-                user_question=user_message,
-                command_outputs={},  # Empty command outputs
-                conversation_history=app.conversation_history[session_id]
+
+        logger.info(f"AI decision: type={ai_response['type']}, commands_count={len(ai_response.get('commands', []))}")
+
+        # Step 2: Check if AI decided this is just chat
+        if ai_response['type'] == 'chat':
+            # No commands needed, just return AI's chat response
+            bot_response = ai_response['response']
+
+            # Save user message to database
+            app.db.save_chat_message(
+                user_id=user_id,
+                session_id=session_id,
+                role='user',
+                message=user_message
             )
-            
+
+            # Save assistant response to database
+            app.db.save_chat_message(
+                user_id=user_id,
+                session_id=session_id,
+                role='assistant',
+                message=bot_response,
+                commands_executed=[]
+            )
+
+            # Log activity
+            app.db.log_activity(
+                user_id=user_id,
+                action_type='chat_message',
+                success=True
+            )
+
+            # Add response to history
+            app.conversation_history[session_id].append({
+                'role': 'assistant',
+                'message': bot_response,
+                'timestamp': datetime.now().isoformat(),
+                'commands_executed': []
+            })
+
+            return jsonify({
+                'response': bot_response,
+                'commands_executed': [],
+                'response_type': 'chat',
+                'session_id': session_id,
+                'timestamp': datetime.now().isoformat()
+            })
+
+        # Step 3: AI decided this needs investigation - execute commands
+        suggested_commands = ai_response.get('commands', [])
+
+        if not suggested_commands:
+            logger.info("AI returned investigation type but no commands - treating as chat")
+            bot_response = ai_response['response']
+
             # Save to database
             app.db.save_chat_message(
                 user_id=user_id,
@@ -1255,64 +1275,43 @@ def chat():
                 role='user',
                 message=user_message
             )
-            
+
             app.db.save_chat_message(
                 user_id=user_id,
                 session_id=session_id,
                 role='assistant',
                 message=bot_response,
-                commands_executed=[],
-                classification_info={
-                    'type': classification.question_type.value,
-                    'complexity_score': classification.complexity_score,
-                    'confidence': classification.confidence,
-                    'method': classification.classification_method
-                }
+                commands_executed=[]
             )
-            
+
             # Log activity
             app.db.log_activity(
                 user_id=user_id,
-                action_type='advice_query',
-                classification_type=classification.question_type.value,
+                action_type='chat_message',
                 success=True
             )
-            
+
             # Add response to history
             app.conversation_history[session_id].append({
                 'role': 'assistant',
                 'message': bot_response,
                 'timestamp': datetime.now().isoformat(),
-                'commands_executed': [],
-                'classification': {
-                    'type': classification.question_type.value,
-                    'complexity_score': classification.complexity_score,
-                    'confidence': classification.confidence,
-                    'method': classification.classification_method
-                },
-                'analysis_type': 'advice_only'
+                'commands_executed': []
             })
-            
+
             return jsonify({
                 'response': bot_response,
                 'commands_executed': [],
-                'classification': {
-                    'type': classification.question_type.value,
-                    'complexity_score': classification.complexity_score,
-                    'confidence': classification.confidence,
-                    'method': classification.classification_method,
-                    'reasoning': classification.reasoning
-                },
+                'response_type': 'chat',
                 'session_id': session_id,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'advice_only'
+                'timestamp': datetime.now().isoformat()
             })
-        
-        logger.info(f"Model suggested commands: {suggested_commands}")
-        
-        # Step 4: Execute safe commands (no verification needed now)
+
+        logger.info(f"AI suggested commands: {suggested_commands}")
+
+        # Step 4: Execute suggested commands
         logger.info("Step 4: Executing commands...")
-        
+
         # Get active kubeconfig and create appropriate K8sClient
         active_kubeconfig = app.db.get_active_kubeconfig()
         if active_kubeconfig:
@@ -1322,28 +1321,27 @@ def chat():
         else:
             k8s_client_to_use = app.k8s_client  # Fallback to default client
             logger.warning("No active kubeconfig found, using default client")
-        
+
         command_outputs = {}
         executed_commands = []
-        
+
         for cmd in suggested_commands:
             logger.info(f"Verifying command: {cmd}")
-            
+
             # Verify command safety before execution
             is_safe, safety_reason = CommandVerifier.is_safe_command(cmd)
             if not is_safe:
                 logger.warning(f"Command blocked by safety verifier: {cmd} - Reason: {safety_reason}")
-                
+
                 # Log blocked command attempt
                 app.db.log_activity(
                     user_id=user_id,
                     action_type='command_blocked',
                     command=cmd,
-                    classification_type=classification.question_type.value,
                     success=False,
                     error_message=f"Safety check failed: {safety_reason}"
                 )
-                
+
                 # Store blocked command info
                 command_outputs[cmd] = {
                     'success': False,
@@ -1353,107 +1351,37 @@ def chat():
                     'stderr': f"Safety verification failed: {safety_reason}"
                 }
                 continue  # Skip to next command
-            
+
             logger.info(f"Command verified as safe: {cmd}")
             # Execute the command (remove 'kubectl' prefix for the k8s_client)
             cmd_parts = cmd.split()[1:]  # Remove 'kubectl'
             output = k8s_client_to_use._run_kubectl_command(cmd_parts)
             command_outputs[cmd] = output
             executed_commands.append(cmd)
-            
+
             # Log command execution
             app.db.log_activity(
                 user_id=user_id,
                 action_type='command_executed',
                 command=cmd,
-                classification_type=classification.question_type.value,
                 success=output.get('success'),
                 error_message=output.get('stderr') if not output.get('success') else None
             )
-            
+
             # Log command execution result
             if output.get('success'):
                 logger.info(f"Command succeeded: {cmd}")
             else:
                 logger.warning(f"Command failed: {cmd} - {output.get('stderr', 'Unknown error')}")
-        
-        # Step 5: Generate follow-up commands if allowed and appropriate
-        follow_up_commands = []
-        if (follow_up_allowed and command_outputs and 
-            classification.question_type in [QuestionType.MODERATE_INVESTIGATION, QuestionType.DEEP_ANALYSIS]):
-            
-            logger.info("Step 5: Generating follow-up commands...")
-            follow_up_commands = llm_provider.suggest_follow_up_commands(
-                original_question=user_message,
-                discovery_outputs=command_outputs,
-                conversation_history=app.conversation_history[session_id]
-            )
-            
-            # Limit follow-up commands based on classification
-            if follow_up_commands and len(follow_up_commands) > 2:  # Conservative limit for follow-ups
-                follow_up_commands = follow_up_commands[:2]
-            
-            if follow_up_commands:
-                logger.info(f"Model suggested follow-up commands: {follow_up_commands}")
-                
-                for cmd in follow_up_commands:
-                    logger.info(f"Verifying follow-up command: {cmd}")
-                    
-                    # Verify follow-up command safety before execution
-                    is_safe, safety_reason = CommandVerifier.is_safe_command(cmd)
-                    if not is_safe:
-                        logger.warning(f"Follow-up command blocked by safety verifier: {cmd} - Reason: {safety_reason}")
-                        
-                        # Log blocked follow-up command attempt
-                        app.db.log_activity(
-                            user_id=user_id,
-                            action_type='followup_command_blocked',
-                            command=cmd,
-                            classification_type=classification.question_type.value,
-                            success=False,
-                            error_message=f"Safety check failed: {safety_reason}"
-                        )
-                        
-                        # Store blocked follow-up command info
-                        command_outputs[cmd] = {
-                            'success': False,
-                            'error': f"Follow-up command blocked for safety reasons: {safety_reason}",
-                            'safety_blocked': True,
-                            'stdout': '',
-                            'stderr': f"Safety verification failed: {safety_reason}"
-                        }
-                        continue  # Skip to next command
-                    
-                    logger.info(f"Follow-up command verified as safe: {cmd}")
-                    cmd_parts = cmd.split()[1:]  # Remove 'kubectl'
-                    output = k8s_client_to_use._run_kubectl_command(cmd_parts)
-                    command_outputs[cmd] = output
-                    executed_commands.append(cmd)
-                    
-                    # Log follow-up command
-                    app.db.log_activity(
-                        user_id=user_id,
-                        action_type='followup_command_executed',
-                        command=cmd,
-                        classification_type=classification.question_type.value,
-                        success=output.get('success'),
-                        error_message=output.get('stderr') if not output.get('success') else None
-                    )
-                    
-                    # Log command execution result
-                    if output.get('success'):
-                        logger.info(f"Follow-up command succeeded: {cmd}")
-                    else:
-                        logger.warning(f"Follow-up command failed: {cmd} - {output.get('stderr', 'Unknown error')}")
-        
-        # Step 6: Send command outputs to model for analysis
-        logger.info("Step 6: Analyzing command outputs...")
+
+        # Step 5: Let AI analyze the command outputs and generate final response
+        logger.info("Step 5: Analyzing command outputs...")
         bot_response = llm_provider.analyze_command_outputs(
             user_question=user_message,
             command_outputs=command_outputs,
             conversation_history=app.conversation_history[session_id]
         )
-        
+
         # Save to database
         app.db.save_chat_message(
             user_id=user_id,
@@ -1461,60 +1389,44 @@ def chat():
             role='user',
             message=user_message
         )
-        
+
         app.db.save_chat_message(
             user_id=user_id,
             session_id=session_id,
             role='assistant',
             message=bot_response,
-            commands_executed=executed_commands,
-            classification_info={
-                'type': classification.question_type.value,
-                'complexity_score': classification.complexity_score,
-                'confidence': classification.confidence,
-                'method': classification.classification_method
-            }
+            commands_executed=executed_commands
         )
-        
-        # Add bot response to history
+
+        # Log activity
+        app.db.log_activity(
+            user_id=user_id,
+            action_type='investigation',
+            success=True
+        )
+
+        # Add response to history
         app.conversation_history[session_id].append({
             'role': 'assistant',
             'message': bot_response,
             'timestamp': datetime.now().isoformat(),
-            'commands_executed': executed_commands,
-            'classification': {
-                'type': classification.question_type.value,
-                'complexity_score': classification.complexity_score,
-                'confidence': classification.confidence,
-                'method': classification.classification_method,
-                'reasoning': classification.reasoning
-            },
-            'analysis_type': 'command_based'
+            'commands_executed': executed_commands
         })
-        
+
         return jsonify({
             'response': bot_response,
             'commands_executed': executed_commands,
-            'classification': {
-                'type': classification.question_type.value,
-                'complexity_score': classification.complexity_score,
-                'confidence': classification.confidence,
-                'method': classification.classification_method,
-                'reasoning': classification.reasoning,
-                'strategy': classification.strategy_type.value,
-                'max_commands_suggested': classification.suggested_max_commands,
-                'follow_up_allowed': classification.follow_up_allowed
-            },
+            'command_outputs': command_outputs,
+            'response_type': 'investigation',
             'session_id': session_id,
-            'timestamp': datetime.now().isoformat(),
-            'analysis_type': 'command_based'
+            'timestamp': datetime.now().isoformat()
         })
-        
+
     except Exception as e:
-        logger.error(f"Error processing chat request: {str(e)}")
+        logger.error(f"Chat endpoint error: {str(e)}")
         return jsonify({
-            'error': 'Internal server error',
-            'message': 'Failed to process your request. Please try again.'
+            'error': 'An error occurred processing your request',
+            'details': str(e)
         }), 500
 
 # ==================== KUBECONFIG ENDPOINTS ====================

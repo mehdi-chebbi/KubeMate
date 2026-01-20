@@ -229,22 +229,56 @@ class OpenRouterProvider(LLMProvider):
     def suggest_commands(self, user_question: str, conversation_history: List[Dict[str, Any]]) -> List[str]:
         """Suggest appropriate kubectl commands based on user question"""
         try:
-            # Build a focused prompt for command suggestion
             system_prompt = """You are a Kubernetes expert. Based on the user's question, suggest the most appropriate kubectl commands to investigate their issue.
 
-Guidelines:
-- Suggest ONLY read-only kubectl commands (get, describe, logs, top)
-- Focus on the specific resources mentioned (pods, deployments, services, nodes, etc.)
-- Be specific with resource names when possible
-- Limit to 1-3 essential commands
+CRITICAL RULES:
+
+- Suggest ONLY read-only kubectl commands (get, describe, logs, top, events)
+
+- Focus on specific resources mentioned (pods, deployments, services, nodes, etc.)
+
+- NEVER use placeholders like <pod-name>, <namespace>, <pod> - use real names from the question or generic flags
+
+- Start with general discovery commands (kubectl get pods, kubectl get namespaces, kubectl get deployments)
+
+- Use --all-namespaces or -l flags instead of specific placeholders
+
+
 - Format as a simple list of commands only, no explanations
 
-Example:
+
+
+Examples:
+
 User: "Why is my nginx pod failing?"
+
 Commands:
+
 - kubectl get pods -l app=nginx
-- kubectl describe pod <nginx-pod-name>
-- kubectl logs <nginx-pod-name>"""
+
+- kubectl get events --field-selector involvedObject.name=<pod-name-from-above>
+
+
+
+User: "show me all pods"
+
+Commands:
+
+- kubectl get pods --all-namespaces
+
+
+
+User: "what's wrong with my deployments?"
+
+Commands:
+
+- kubectl get deployments --all-namespaces
+
+- kubectl get pods --all-namespaces
+
+
+
+NEVER use placeholders! If you don't have a specific pod name, use general commands instead."""
 
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -290,8 +324,7 @@ Your task:
 1. Analyze the provided kubectl command outputs
 2. Identify any issues, problems, or important information
 3. Provide clear, actionable insights
-4. Suggest specific next steps if there are problems
-5. Be conversational and helpful
+4. Be conversational and helpful
 
 Focus on:
 - Pod status issues (CrashLoopBackOff, ImagePullBackOff, Pending, etc.)
@@ -347,19 +380,34 @@ Be honest about what you can and cannot determine from the outputs."""
         """Suggest follow-up commands based on initial investigation"""
         try:
             # Build a focused prompt for follow-up command suggestion
-            system_prompt = """You are a Kubernetes expert. Based on the initial investigation results, suggest follow-up commands to dig deeper into any issues found.
+            system_prompt = """You are a Kubernetes expert. Based on initial investigation results, suggest follow-up commands to dig deeper into any issues found.
 
-Guidelines:
+CRITICAL RULES:
+
 - Suggest ONLY read-only kubectl commands (get, describe, logs, top, events)
-- Focus on investigating problems identified in the first round
-- Be specific with resource names and namespaces
-- Limit to 1-2 essential follow-up commands
+
+- Focus on investigating problems identified in first round
+
+- NEVER use placeholders like <pod-name>, <namespace>, <pod> - use --all-namespaces or labels from outputs
+
+
+- Use resource names from the actual command outputs above
+
 - Consider what additional information would be most helpful
 
+
+
 Examples:
-If pods are failing: check pod logs, describe pods, check events
-If deployments have issues: check deployment status, check replica sets
-If resource issues: check resource quotas, node status"""
+
+If pods are failing: kubectl get events, kubectl describe pods
+
+If deployments have issues: kubectl describe deployments, kubectl get replicasets
+
+If resource issues: kubectl describe nodes, kubectl get resourcequotas
+
+
+
+NEVER use placeholders! Use actual names from command outputs or general flags."""
 
             # Format discovery outputs for the prompt
             outputs_text = ""
@@ -396,13 +444,176 @@ If resource issues: check resource quotas, node status"""
 
                 # Extract commands from the response
                 commands = extract_kubectl_commands(content)
-                return commands[:2]  # Limit to 2 follow-up commands
+                return commands
 
             return []
 
         except Exception as e:
             logger.error(f"Error suggesting follow-up commands: {str(e)}")
             return []
+
+    def generate_intelligent_response(self, user_question: str, conversation_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        AI decides whether to respond with chat or suggest kubectl commands.
+
+        This is the main entry point - AI determines:
+        1. Is this a greeting/casual question? → Return chat response only
+        2. Is this a K8s investigation question? → Suggest appropriate commands
+
+        Args:
+            user_question: The user's message
+            conversation_history: Previous messages in the conversation
+
+        Returns:
+            Dict with:
+            {
+                "type": "chat" | "investigation",
+                "response": "AI's conversational response",
+                "commands": ["kubectl get pods"]  // Only for investigation type
+            }
+        """
+        try:
+            # Build conversation context
+            context = ""
+            if conversation_history:
+                recent_history = conversation_history[-3:]  # Last 3 messages
+                context_parts = []
+                for msg in recent_history:
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('message', '')[:200]  # Truncate long messages
+                    context_parts.append(f"{role}: {content}")
+                context = "\nRecent conversation:\n" + "\n".join(context_parts)
+
+            # Build smart system prompt that lets AI decide
+            system_prompt = f"""You are a Kubernetes expert assistant.
+
+Your task is to understand the user's intent and respond appropriately:
+
+1. **Casual conversation / greetings**: Respond naturally, NO kubectl commands
+   - Examples: "hi", "hello", "how are you?", "thanks", "bye"
+   - Response: Just chat naturally like a human
+
+2. **Kubernetes questions**: Suggest appropriate read-only kubectl commands
+   - Examples: "what's wrong with my namespace?", "show me pods", "check deployment status"
+   - Response: Explain what you'll check + suggest commands
+
+CRITICAL RULES FOR COMMANDS:
+- ONLY suggest commands for actual Kubernetes questions
+- NO commands for greetings, thanks, general chat
+- Commands must be read-only only: get, describe, logs, top, events
+- NEVER use placeholders like <pod-name>, <namespace>, <pod> - use "--all-namespaces" or generic flags instead
+- Start with general discovery commands first (kubectl get pods, kubectl get namespaces)
+- Let user provide specific names if they want to focus on particular resources
+- NO LIMIT on number of commands - suggest as many as needed for thorough investigation
+- Examples of BAD commands: "kubectl describe pod <pod-name>", "kubectl logs <pod> -n <namespace>"
+- Examples of GOOD commands: "kubectl get pods --all-namespaces", "kubectl get namespaces"
+
+Return a JSON response with this exact structure:
+{{
+    "type": "chat" | "investigation",
+    "response": "your conversational response to the user",
+    "commands": ["kubectl command 1", "kubectl command 2"]  // empty array for chat type
+}}
+
+Examples:
+User: "hi"
+Response: {{"type": "chat", "response": "Hello! How can I help you with your Kubernetes cluster today?", "commands": []}}
+
+User: "what's wrong with my namespace?"
+Response: {{"type": "investigation", "response": "Let me check what's happening with your namespace. I'll look at your namespaces and pods.", "commands": ["kubectl get namespaces", "kubectl get pods --all-namespaces"]}}
+
+User: "inspect my nginx pods"
+Response: {{"type": "investigation", "response": "I'll check your nginx pods to see what's happening.", "commands": ["kubectl get pods -l app=nginx"]}}
+
+User: "thanks"
+Response: {{"type": "chat", "response": "You're welcome! Let me know if you need anything else.", "commands": []}}
+
+User: "show me pods"
+Response: {{"type": "investigation", "response": "I'll show you all the pods in your cluster.", "commands": ["kubectl get pods --all-namespaces"]}}
+
+{context}"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"User says: {user_question}"}
+            ]
+
+            payload = {
+                "model": self.model,
+                "max_tokens": 800,
+                "messages": messages,
+                "temperature": 0.7
+            }
+
+            response = requests.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload,
+                timeout=20
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                content = result['choices'][0]['message']['content']
+
+                # Try to extract JSON from response
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    try:
+                        ai_response = json.loads(json_match.group())
+
+                        # Validate the structure
+                        response_type = ai_response.get('type', 'chat')
+                        response_text = ai_response.get('response', '')
+                        commands = ai_response.get('commands', [])
+
+                        # Ensure commands is a list
+                        if not isinstance(commands, list):
+                            commands = []
+
+                        # Only allow valid types
+                        if response_type not in ['chat', 'investigation']:
+                            response_type = 'chat'
+
+                        logger.info(f"AI intelligent response: type={response_type}, commands_count={len(commands)}")
+
+                        return {
+                            'type': response_type,
+                            'response': response_text,
+                            'commands': commands
+                        }
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse AI JSON response: {content}")
+                        # Fallback: treat as chat
+                        return {
+                            'type': 'chat',
+                            'response': content,
+                            'commands': []
+                        }
+                else:
+                    # No JSON found, treat entire response as chat
+                    logger.warning(f"No JSON in AI response, treating as chat: {content[:100]}")
+                    return {
+                        'type': 'chat',
+                        'response': content,
+                        'commands': []
+                    }
+            else:
+                logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
+                # Return fallback
+                return {
+                    'type': 'chat',
+                    'response': 'I had trouble understanding. Could you please rephrase?',
+                    'commands': []
+                }
+
+        except Exception as e:
+            logger.error(f"Error generating intelligent response: {str(e)}")
+            return {
+                'type': 'chat',
+                'response': 'Something went wrong. Please try again.',
+                'commands': []
+            }
 
     def test_connection(self) -> Dict[str, Any]:
         """Test connection to OpenRouter API"""
@@ -462,7 +673,6 @@ RESPONSE STYLE RULES:
 2. Simple questions get simple, direct answers
 3. Only investigate when there are actual problems
 4. Use casual language like "Hey!", "Looks like", "Oh, interesting"
-5. No need for summaries, next steps, or follow-ups unless there's a real problem
 
 SIMPLE QUESTIONS (get direct answers):
 - "what pods are in my default ns" → Just list the pods
@@ -885,19 +1095,54 @@ class LocalLLMProvider(LLMProvider):
             # Build a focused prompt for command suggestion
             system_prompt = """You are a Kubernetes expert. Based on the user's question, suggest the most appropriate kubectl commands to investigate their issue.
 
-Guidelines:
-- Suggest ONLY read-only kubectl commands (get, describe, logs, top)
-- Focus on the specific resources mentioned (pods, deployments, services, nodes, etc.)
-- Be specific with resource names when possible
-- Limit to 1-3 essential commands
+CRITICAL RULES:
+
+- Suggest ONLY read-only kubectl commands (get, describe, logs, top, events)
+
+- Focus on specific resources mentioned (pods, deployments, services, nodes, etc.)
+
+- NEVER use placeholders like <pod-name>, <namespace>, <pod> - use real names from the question or generic flags
+
+- Start with general discovery commands (kubectl get pods, kubectl get namespaces, kubectl get deployments)
+
+- Use --all-namespaces or -l flags instead of specific placeholders
+
+
 - Format as a simple list of commands only, no explanations
 
-Example:
+
+
+Examples:
+
 User: "Why is my nginx pod failing?"
+
 Commands:
+
 - kubectl get pods -l app=nginx
-- kubectl describe pod <nginx-pod-name>
-- kubectl logs <nginx-pod-name>"""
+
+- kubectl get events --field-selector involvedObject.name=<pod-name-from-above>
+
+
+
+User: "show me all pods"
+
+Commands:
+
+- kubectl get pods --all-namespaces
+
+
+
+User: "what's wrong with my deployments?"
+
+Commands:
+
+- kubectl get deployments --all-namespaces
+
+- kubectl get pods --all-namespaces
+
+
+
+NEVER use placeholders! If you don't have a specific pod name, use general commands instead."""
 
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -943,8 +1188,7 @@ Your task:
 1. Analyze the provided kubectl command outputs
 2. Identify any issues, problems, or important information
 3. Provide clear, actionable insights
-4. Suggest specific next steps if there are problems
-5. Be conversational and helpful
+4. Be conversational and helpful
 
 Focus on:
 - Pod status issues (CrashLoopBackOff, ImagePullBackOff, Pending, etc.)
@@ -1000,19 +1244,34 @@ Be honest about what you can and cannot determine from outputs."""
         """Suggest follow-up commands based on initial investigation"""
         try:
             # Build a focused prompt for follow-up command suggestion
-            system_prompt = """You are a Kubernetes expert. Based on the initial investigation results, suggest follow-up commands to dig deeper into any issues found.
+            system_prompt = """You are a Kubernetes expert. Based on initial investigation results, suggest follow-up commands to dig deeper into any issues found.
 
-Guidelines:
+CRITICAL RULES:
+
 - Suggest ONLY read-only kubectl commands (get, describe, logs, top, events)
-- Focus on investigating problems identified in the first round
-- Be specific with resource names and namespaces
-- Limit to 1-2 essential follow-up commands
+
+- Focus on investigating problems identified in first round
+
+- NEVER use placeholders like <pod-name>, <namespace>, <pod> - use --all-namespaces or labels from outputs
+
+
+- Use resource names from the actual command outputs above
+
 - Consider what additional information would be most helpful
 
+
+
 Examples:
-If pods are failing: check pod logs, describe pods, check events
-If deployments have issues: check deployment status, check replica sets
-If resource issues: check resource quotas, node status"""
+
+If pods are failing: kubectl get events, kubectl describe pods
+
+If deployments have issues: kubectl describe deployments, kubectl get replicasets
+
+If resource issues: kubectl describe nodes, kubectl get resourcequotas
+
+
+
+NEVER use placeholders! Use actual names from command outputs or general flags."""
 
             # Format discovery outputs for the prompt
             outputs_text = ""
@@ -1049,7 +1308,7 @@ If resource issues: check resource quotas, node status"""
 
                 # Extract commands from the response
                 commands = extract_kubectl_commands(content)
-                return commands[:2]  # Limit to 2 follow-up commands
+                return commands
 
             return []
 

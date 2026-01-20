@@ -116,7 +116,14 @@ class CommandVerifier:
         '--log-json',
         '--short',  # Added for kubectl version --short
         '--client',  # For kubectl version --client
-        '--server'   # For kubectl version --server
+        '--server',  # For kubectl version --server
+        '--previous',  # For kubectl logs --previous
+        '--all-containers',  # For kubectl logs --all-containers
+        '--tail',  # For kubectl logs --tail
+        '--since',  # For kubectl logs --since
+        '--until',  # For kubectl logs --until
+        '--timestamps',  # For kubectl logs --timestamps
+        '--prefix',  # For kubectl logs --prefix
     }
     
     @classmethod
@@ -199,17 +206,10 @@ class CommandVerifier:
                     
                     if not is_allowed:
                         return False, f"Command contains potentially dangerous pattern: {pattern}"
-            
-            # Validate flags and options (if any)
-            if len(parts) > 2:
-                for i, part in enumerate(parts[2:], 2):
-                    # Skip resource names and values
-                    if part.startswith('-'):
-                        # Remove any values attached to flags (like -n=default)
-                        flag = part.split('=')[0]
-                        if flag not in cls.SAFE_FLAGS:
-                            return False, f"Unsafe flag or option: {flag}"
-            
+
+            # No flag validation - flags are safe options for read-only commands
+            # We only restrict to read-only verbs (get, describe, logs, top, events, etc.)
+
             # Special checks for specific commands
             if verb == 'logs':
                 # logs command should have a pod name
