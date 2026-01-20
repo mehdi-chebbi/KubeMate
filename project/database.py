@@ -145,7 +145,7 @@ class Database:
 
     """Database manager for K8s Audit Bot using PostgreSQL"""
     
-    def __init__(self, host='localhost', port=5432, database='k8s_bot', 
+    def __init__(self, host='postgres', port=5432, database='k8s_bot', 
                  user='bot_user', password='bot_password_123', min_conn=1, max_conn=10):
         """Initialize database connection pool"""
         self.connection_pool = None
