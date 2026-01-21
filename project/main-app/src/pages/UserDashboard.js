@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LogOut, Cpu, MessageSquare, Send, Loader2, Plus, Edit2, Trash2, ChevronLeft, Network, Server } from 'lucide-react';
 import { apiService } from '../services/apiService';
 
-// Import the new libraries for markdown rendering and syntax highlighting
+// Import new libraries for markdown rendering and syntax highlighting
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const UserDashboard = ({ user, onLogout }) => {
   const [greeting, setGreeting] = useState('');
@@ -19,6 +21,7 @@ const UserDashboard = ({ user, onLogout }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [streamingStatus, setStreamingStatus] = useState(null); // Track streaming state
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -30,26 +33,26 @@ const UserDashboard = ({ user, onLogout }) => {
     } else {
       setGreeting('Good evening');
     }
-    
+
     // Load user sessions
     loadSessions();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingStatus]);
 
   const loadSessions = async () => {
     try {
       const response = await apiService.getUserSessions(user.id);
       if (response.success) {
         setSessions(response.sessions);
-        
+
         // If no sessions, create one
         if (response.sessions.length === 0) {
           await createNewSession();
         } else {
-          // Load the most recent session
+          // Load most recent session
           const mostRecent = response.sessions[0];
           setCurrentSessionId(mostRecent.session_id);
           loadSessionHistory(mostRecent.session_id);
@@ -101,20 +104,20 @@ const UserDashboard = ({ user, onLogout }) => {
 
   const deleteSession = async (sessionId, e) => {
     e.stopPropagation();
-    
+
     // Don't allow deleting if it would leave no sessions
     const nonTempSessions = sessions.filter(s => !s.is_temp);
     if (nonTempSessions.length <= 1 && !sessions.find(s => s.session_id === sessionId && s.is_temp)) {
-      setError('Cannot delete the last session');
+      setError('Cannot delete last session');
       return;
     }
 
     // If it's a temporary session, just remove it from state
     if (sessions.find(s => s.session_id === sessionId && s.is_temp)) {
       setSessions(prev => prev.filter(s => s.session_id !== sessionId));
-      
+
       if (currentSessionId === sessionId) {
-        // Switch to the most recent non-temp session
+        // Switch to most recent non-temp session
         const remaining = sessions.filter(s => s.session_id !== sessionId && !s.is_temp);
         if (remaining.length > 0) {
           switchSession(remaining[0].session_id);
@@ -129,9 +132,9 @@ const UserDashboard = ({ user, onLogout }) => {
       const response = await apiService.deleteSession(user.id, sessionId);
       if (response.success) {
         setSessions(prev => prev.filter(s => s.session_id !== sessionId));
-        
+
         if (currentSessionId === sessionId) {
-          // Switch to the most recent session
+          // Switch to most recent session
           const remaining = sessions.filter(s => s.session_id !== sessionId);
           if (remaining.length > 0) {
             switchSession(remaining[0].session_id);
@@ -154,7 +157,7 @@ const UserDashboard = ({ user, onLogout }) => {
 
   const saveSessionTitle = async (sessionId, e) => {
     e.stopPropagation();
-    
+
     if (editingTitle.trim()) {
       // Don't allow editing temporary sessions (they should be saved first)
       const session = sessions.find(s => s.session_id === sessionId);
@@ -164,12 +167,12 @@ const UserDashboard = ({ user, onLogout }) => {
         setEditingTitle('');
         return;
       }
-      
+
       try {
         const response = await apiService.updateSession(user.id, sessionId, editingTitle.trim());
         if (response.success) {
-          setSessions(prev => prev.map(s => 
-            s.session_id === sessionId 
+          setSessions(prev => prev.map(s =>
+            s.session_id === sessionId
               ? { ...s, title: editingTitle.trim() }
               : s
           ));
@@ -178,7 +181,7 @@ const UserDashboard = ({ user, onLogout }) => {
         console.error('Failed to update session title:', error);
       }
     }
-    
+
     setEditingSessionId(null);
     setEditingTitle('');
   };
@@ -193,9 +196,24 @@ const UserDashboard = ({ user, onLogout }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Helper function to parse SSE events
+  const parseSSEEvent = (line) => {
+    if (!line.startsWith('data: ')) {
+      return null;
+    }
+    try {
+      const dataStr = line.substring(6).trim();
+      return JSON.parse(dataStr);
+    } catch (e) {
+      console.error('Failed to parse SSE event:', e);
+      return null;
+    }
+  };
+
+  // Updated handleSendMessage with streaming support
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    
+
     if (!message.trim() || isLoading) {
       return;
     }
@@ -209,10 +227,10 @@ const UserDashboard = ({ user, onLogout }) => {
           actualSessionId = response.data.session_id;
           setCurrentSessionId(actualSessionId);
           setTempSessionId(null);
-          
+
           // Replace temporary session with real session in sessions list
-          setSessions(prev => prev.map(s => 
-            s.session_id === tempSessionId 
+          setSessions(prev => prev.map(s =>
+            s.session_id === tempSessionId
               ? {
                   session_id: actualSessionId,
                   title: response.data.title,
@@ -238,67 +256,183 @@ const UserDashboard = ({ user, onLogout }) => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const messageText = message.trim();
     setMessage('');
     setIsLoading(true);
     setError('');
+    setStreamingStatus('connecting');
+
+    // Create placeholder for assistant message that will be updated
+    const assistantMessageId = Date.now() + 1;
+    const assistantMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      isStreaming: true
+    };
+    setMessages(prev => [...prev, assistantMessage]);
+
+    let executedCommands = [];
 
     try {
-      const response = await apiService.chat(message.trim(), user.id, actualSessionId);
-      
-      if (response.success) {
-        const assistantMessage = {
-          id: Date.now() + 1,
-          role: 'assistant',
-          content: response.data.response,
-          timestamp: new Date().toISOString()
-        };
-        
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // Update session title if this is the first message
-        const sessionMessages = messages.filter(m => m.role === 'user');
-        if (sessionMessages.length === 0) {
-          const newTitle = message.trim().substring(0, 30) + (message.trim().length > 30 ? '...' : '');
-          try {
-            await apiService.updateSession(user.id, actualSessionId, newTitle);
-            setSessions(prev => prev.map(s => 
-              s.session_id === actualSessionId 
-                ? { ...s, title: newTitle, message_count: s.message_count + 2 }
-                : s
-            ));
-          } catch (error) {
-            console.error('Failed to update session title:', error);
+      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Send HttpOnly cookies
+        body: JSON.stringify({
+          message: messageText,
+          session_id: actualSessionId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      setStreamingStatus('streaming');
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split by double newlines to get complete events
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || ''; // Keep incomplete event in buffer
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine || trimmedLine === '') {
+            continue;
           }
-        } else {
-          setSessions(prev => prev.map(s => 
-            s.session_id === actualSessionId 
-              ? { ...s, message_count: s.message_count + 2 }
+
+          const event = parseSSEEvent(trimmedLine);
+          if (!event) {
+            continue;
+          }
+
+          // Handle different event types
+          switch (event.type) {
+            case 'metadata':
+              // Update streaming status based on response type
+              if (event.response_type === 'investigation') {
+                setStreamingStatus('investigating');
+              } else {
+                setStreamingStatus('chatting');
+              }
+              break;
+
+            case 'content':
+              // Append content chunk to assistant message
+              setMessages(prev => prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: msg.content + event.content }
+                  : msg
+              ));
+              scrollToBottom();
+              break;
+
+            case 'command_executing':
+              setStreamingStatus({ type: 'command_executing', command: event.command });
+              break;
+
+            case 'command_completed':
+              executedCommands.push(event.command);
+              setStreamingStatus({ type: 'command_completed', command: event.command, success: event.success });
+              break;
+
+            case 'command_blocked':
+              console.warn('Command blocked:', event.command, event.reason);
+              setMessages(prev => {
+                const updated = [...prev];
+                const msgIndex = updated.findIndex(m => m.id === assistantMessageId);
+                if (msgIndex >= 0) {
+                  updated[msgIndex] = {
+                    ...updated[msgIndex],
+                    content: updated[msgIndex].content + `\n\n⚠️ **Command blocked:** ${event.command}\n*Reason: ${event.reason}*`
+                  };
+                }
+                return updated;
+              });
+              scrollToBottom();
+              break;
+
+            case 'analysis_start':
+              setStreamingStatus('analyzing');
+              break;
+
+            case 'error':
+              console.error('Streaming error:', event.error);
+              setMessages(prev => prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: `Error: ${event.error}`, isError: true, isStreaming: false }
+                  : msg
+              ));
+              scrollToBottom();
+              break;
+
+            case 'done':
+              setStreamingStatus('done');
+              executedCommands = event.commands_executed || [];
+              // Mark message as complete
+              setMessages(prev => prev.map(msg =>
+                msg.id === assistantMessageId
+                  ? { ...msg, isStreaming: false }
+                  : msg
+              ));
+              break;
+
+            default:
+              console.log('Unknown event type:', event.type);
+          }
+        }
+      }
+
+      // Update session after streaming is complete
+      const sessionMessages = messages.filter(m => m.role === 'user');
+      if (sessionMessages.length === 0) {
+        const newTitle = messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '');
+        try {
+          await apiService.updateSession(user.id, actualSessionId, newTitle);
+          setSessions(prev => prev.map(s =>
+            s.session_id === actualSessionId
+              ? { ...s, title: newTitle, message_count: s.message_count + 2 }
               : s
           ));
+        } catch (error) {
+          console.error('Failed to update session title:', error);
         }
       } else {
-        const errorMessage = {
-          id: Date.now() + 1,
-          role: 'assistant',
-          content: `Error: ${response.error}`,
-          timestamp: new Date().toISOString(),
-          isError: true
-        };
-        
-        setMessages(prev => [...prev, errorMessage]);
+        setSessions(prev => prev.map(s =>
+          s.session_id === actualSessionId
+            ? { ...s, message_count: s.message_count + 2 }
+            : s
+        ));
       }
+
     } catch (error) {
-      const errorMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date().toISOString(),
-        isError: true
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('Streaming error:', error);
+      setMessages(prev => prev.map(msg =>
+        msg.id === assistantMessageId
+          ? { ...msg, content: 'Sorry, I encountered an error. Please try again.', isError: true, isStreaming: false }
+          : msg
+      ));
+      setError('Failed to send message');
     } finally {
       setIsLoading(false);
+      setStreamingStatus(null);
     }
   };
 
@@ -306,7 +440,7 @@ const UserDashboard = ({ user, onLogout }) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffInHours = Math.floor((now - date) / (1000 * 60 * 60));
-    
+
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInHours < 48) return 'Yesterday';
@@ -474,16 +608,19 @@ const UserDashboard = ({ user, onLogout }) => {
                   <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[80%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
                       <div className={`px-4 py-3 rounded-lg ${
-                        msg.role === 'user' 
-                          ? 'bg-k8s-blue text-white ml-4' 
-                          : msg.isError 
+                        msg.role === 'user'
+                          ? 'bg-k8s-blue text-white ml-4'
+                          : msg.isError
                             ? 'bg-red-500/20 text-red-400 mr-4 border border-red-500/30'
-                            : 'bg-k8s-dark/50 text-white mr-4 border border-k8s-blue/20' // Changed text to white
+                            : 'bg-k8s-dark/50 text-white mr-4 border border-k8s-blue/20'
                       }`}>
                         {msg.role === 'assistant' && (
                           <div className="flex items-center gap-2 mb-2">
                             <Cpu className="w-4 h-4 text-k8s-blue" />
                             <span className="text-xs font-medium text-k8s-blue">K8s Assistant</span>
+                            {msg.isStreaming && (
+                              <span className="text-xs text-k8s-gray/60 animate-pulse">streaming...</span>
+                            )}
                           </div>
                         )}
                         <div className="text-sm">
@@ -540,23 +677,33 @@ const UserDashboard = ({ user, onLogout }) => {
                   </div>
                 ))
               )}
-              {isLoading && (
+
+              {/* Streaming Status Indicator */}
+              {streamingStatus && typeof streamingStatus === 'object' && (
                 <div className="flex justify-start">
-                  <div className="bg-k8s-dark/50 text-white mr-4 border border-k8s-blue/20 px-4 py-3 rounded-lg max-w-[80%]"> {/* Changed text to white */}
+                  <div className="bg-k8s-dark/50 text-white mr-4 border border-k8s-blue/20 px-4 py-3 rounded-lg max-w-[80%]">
                     <div className="flex items-center gap-2 mb-2">
                       <Cpu className="w-4 h-4 text-k8s-blue" />
                       <span className="text-xs font-medium text-k8s-blue">K8s Assistant</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 text-sm">
                       <Loader2 className="w-4 h-4 animate-k8s-spin" />
-                      <span className="text-sm">Thinking...</span>
+                      {streamingStatus.type === 'command_executing' && (
+                        <span>Running: <code className="bg-k8s-dark/70 px-2 py-1 rounded text-k8s-blue">{streamingStatus.command}</code></span>
+                      )}
+                      {streamingStatus.type === 'command_completed' && (
+                        <span className={streamingStatus.success ? 'text-green-400' : 'text-red-400'}>
+                          {streamingStatus.success ? '✓ Command completed' : '✗ Command failed'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
+
               <div ref={messagesEndRef} />
             </div>
-          
+
             {/* Chat Input */}
             <div className="border-t border-k8s-blue/20 p-4">
               <form onSubmit={handleSendMessage} className="flex gap-3">
@@ -596,3 +743,4 @@ const UserDashboard = ({ user, onLogout }) => {
 };
 
 export default UserDashboard;
+  

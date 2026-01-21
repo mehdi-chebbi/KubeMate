@@ -13,6 +13,8 @@ from question_classifier import HybridQuestionClassifier, QuestionType
 from database import Database
 from command_verifier import CommandVerifier
 from functools import wraps
+import json
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -118,7 +120,6 @@ def determine_role_from_system_pods(node_name, k8s_client):
         if not pods_result['success']:
             return 'worker'
         
-        import json
         pods_data = json.loads(pods_result['stdout'])
         pods = pods_data.get('items', [])
         
@@ -213,7 +214,6 @@ app = create_app()
 @app.route('/health', methods=['GET'])
 def health_check():
     """Enhanced health check endpoint with comprehensive status and caching"""
-    import time
     
     # Check if we have a cached result that's still valid
     current_time = time.time()
@@ -2362,7 +2362,6 @@ def get_topology_nodes():
         nodes_data = []
         
         if nodes_result.get('stdout'):
-            import json
             try:
                 nodes_json = json.loads(nodes_result['stdout'])
                 items = nodes_json.get('items', [])
@@ -2495,7 +2494,6 @@ def get_topology_namespaces():
         namespaces_data = []
         
         if namespaces_result.get('stdout'):
-            import json
             try:
                 namespaces_json = json.loads(namespaces_result['stdout'])
                 items = namespaces_json.get('items', [])
@@ -2557,7 +2555,6 @@ def get_topology_pods():
         pods_data = []
         
         if pods_result.get('stdout'):
-            import json
             try:
                 pods_json = json.loads(pods_result['stdout'])
                 items = pods_json.get('items', [])
