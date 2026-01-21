@@ -1,6 +1,6 @@
 # Kubemate
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.25+-blue.svg)](https://kubernetes.io/)
 [![React](https://img.shields.io/badge/React-18.2+-61DAFB.svg)](https://reactjs.org/)
 [![Python](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
@@ -482,26 +482,46 @@ Contributions are welcome!
 
 ## 📄 License
 
-![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Kubemate is licensed under **GNU General Public License v3**.
+Kubemate is licensed under **MIT License**.
 
 ### What This Means
 
 **You CAN:**
 - ✅ Use Kubemate for free (personal or commercial)
 - ✅ Study and modify the source code
-- ✅ Distribute modified versions
+- ✅ Distribute modified versions (open or closed source)
+- ✅ Sell products or services using Kubemate
+- ✅ Keep your modifications private (internal use)
 
-**However, if you distribute a modified version:**
-- ❌ You MUST make your source code publicly available
-- ❌ You MUST license it under GPL v3
-- ❌ You CANNOT make it proprietary/closed-source
-- ❌ You CANNOT sell it as your own product without sharing code
+**Requirements:**
+- ✅ You MUST include the copyright notice in all copies
+- ✅ You MUST keep the MIT license in all distributed copies
+- ✅ You CANNOT claim you wrote the original software
 
-This ensures that any improvements to Kubemate benefit the entire community and prevents unauthorized appropriation of the work as a closed-source product.
+This means you can use Kubemate in commercial products, even closed-source ones, as long as you credit the original author.
 
 For full details, see the [LICENSE](LICENSE) file.
+
+---
+
+## ™️ Trademark
+
+"Kubemate" and the Kubemate logo are trademarks of Mehdi Chebbi.
+
+**What This Means:**
+- ✅ You CAN use the Kubemate code under the MIT License
+- ✅ You CAN refer to Kubemate to describe the origin of your code
+- ❌ You CANNOT use "Kubemate" as your product name
+- ❌ You CANNOT use the Kubemate logo or branding
+- ❌ You CANNOT suggest your product is the official Kubemate
+
+For example:
+- ✅ "ClusterManager - A fork of Kubemate by Mehdi Chebbi"
+- ❌ "Kubemate Enterprise Edition"
+
+Please see the [TRADEMARK.md](TRADEMARK.md) file for the complete trademark policy.
 
 ---
 
