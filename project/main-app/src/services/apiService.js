@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 class ApiService {
   constructor() {
@@ -33,7 +33,7 @@ class ApiService {
   // Health check
   async getHealth() {
     try {
-      const response = await this.api.get('/health');
+      const response = await this.api.get('/api/health');
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Health check error:', error);
@@ -44,7 +44,7 @@ class ApiService {
   // Admin endpoints
   async getUsers() {
     try {
-      const response = await this.api.get('/admin/users');
+      const response = await this.api.get('/api/admin/users');
       return { success: true, users: response.data.users };
     } catch (error) {
       console.error('Get users error:', error);
@@ -54,7 +54,7 @@ class ApiService {
 
   async createUser(userData) {
     try {
-      const response = await this.api.post('/admin/users', userData);
+      const response = await this.api.post('/api/admin/users', userData);
       return { success: true, user: response.data };
     } catch (error) {
       console.error('Create user error:', error);
@@ -64,7 +64,7 @@ class ApiService {
 
   async banUser(userId) {
     try {
-      await this.api.post(`/admin/users/${userId}/ban`);
+      await this.api.post(`/api/admin/users/${userId}/ban`);
       return { success: true };
     } catch (error) {
       console.error('Ban user error:', error);
@@ -74,7 +74,7 @@ class ApiService {
 
   async unbanUser(userId) {
     try {
-      await this.api.post(`/admin/users/${userId}/unban`);
+      await this.api.post(`/api/admin/users/${userId}/unban`);
       return { success: true };
     } catch (error) {
       console.error('Unban user error:', error);
@@ -85,7 +85,7 @@ class ApiService {
   async getActivityLogs(userId = null, limit = 100) {
     try {
       const params = userId ? { user_id: userId, limit } : { limit };
-      const response = await this.api.get('/admin/logs', { params });
+      const response = await this.api.get('/api/admin/logs', { params });
       return { success: true, logs: response.data.logs };
     } catch (error) {
       console.error('Get activity logs error:', error);
@@ -96,7 +96,7 @@ class ApiService {
   // Kubeconfig endpoints
   async getKubeconfigs() {
     try {
-      const response = await this.api.get('/admin/kubeconfigs');
+      const response = await this.api.get('/api/admin/kubeconfigs');
       return { success: true, kubeconfigs: response.data.kubeconfigs };
     } catch (error) {
       console.error('Get kubeconfigs error:', error);
@@ -106,7 +106,7 @@ class ApiService {
 
   async createKubeconfig(kubeconfigData) {
     try {
-      const response = await this.api.post('/admin/kubeconfigs', kubeconfigData);
+      const response = await this.api.post('/api/admin/kubeconfigs', kubeconfigData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Create kubeconfig error:', error);
@@ -116,7 +116,7 @@ class ApiService {
 
   async updateKubeconfig(kubeconfigId, kubeconfigData) {
     try {
-      const response = await this.api.put(`/admin/kubeconfigs/${kubeconfigId}`, kubeconfigData);
+      const response = await this.api.put(`/api/admin/kubeconfigs/${kubeconfigId}`, kubeconfigData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Update kubeconfig error:', error);
@@ -126,7 +126,7 @@ class ApiService {
 
   async deleteKubeconfig(kubeconfigId) {
     try {
-      const response = await this.api.delete(`/admin/kubeconfigs/${kubeconfigId}`);
+      const response = await this.api.delete(`/api/admin/kubeconfigs/${kubeconfigId}`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Delete kubeconfig error:', error);
@@ -136,7 +136,7 @@ class ApiService {
 
   async activateKubeconfig(kubeconfigId) {
     try {
-      const response = await this.api.post(`/admin/kubeconfigs/${kubeconfigId}/activate`);
+      const response = await this.api.post(`/api/admin/kubeconfigs/${kubeconfigId}/activate`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Activate kubeconfig error:', error);
@@ -146,7 +146,7 @@ class ApiService {
 
   async testKubeconfig(kubeconfigId) {
     try {
-      const response = await this.api.post(`/admin/kubeconfigs/${kubeconfigId}/test`);
+      const response = await this.api.post(`/api/admin/kubeconfigs/${kubeconfigId}/test`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Test kubeconfig error:', error);
@@ -156,7 +156,7 @@ class ApiService {
 
   async getActiveKubeconfig() {
     try {
-      const response = await this.api.get('/admin/kubeconfigs/active');
+      const response = await this.api.get('/api/admin/kubeconfigs/active');
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Get active kubeconfig error:', error);
@@ -167,7 +167,7 @@ class ApiService {
   // API Keys endpoints
   async getApiKeys() {
     try {
-      const response = await this.api.get('/admin/api-keys');
+      const response = await this.api.get('/api/admin/api-keys');
       return { success: true, apiKeys: response.data.api_keys };
     } catch (error) {
       console.error('Get API keys error:', error);
@@ -177,7 +177,7 @@ class ApiService {
 
   async createApiKey(apiKeyData) {
     try {
-      const response = await this.api.post('/admin/api-keys', apiKeyData);
+      const response = await this.api.post('/api/admin/api-keys', apiKeyData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Create API key error:', error);
@@ -187,7 +187,7 @@ class ApiService {
 
   async updateApiKey(apiKeyId, apiKeyData) {
     try {
-      const response = await this.api.put(`/admin/api-keys/${apiKeyId}`, apiKeyData);
+      const response = await this.api.put(`/api/admin/api-keys/${apiKeyId}`, apiKeyData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Update API key error:', error);
@@ -197,7 +197,7 @@ class ApiService {
 
   async deleteApiKey(apiKeyId) {
     try {
-      const response = await this.api.delete(`/admin/api-keys/${apiKeyId}`);
+      const response = await this.api.delete(`/api/admin/api-keys/${apiKeyId}`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Delete API key error:', error);
@@ -207,7 +207,7 @@ class ApiService {
 
   async activateApiKey(apiKeyId) {
     try {
-      const response = await this.api.post(`/admin/api-keys/${apiKeyId}/activate`);
+      const response = await this.api.post(`/api/admin/api-keys/${apiKeyId}/activate`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Activate API key error:', error);
@@ -217,7 +217,7 @@ class ApiService {
 
   async getActiveApiKey(provider = 'openrouter') {
     try {
-      const response = await this.api.get('/admin/api-keys/active', { 
+      const response = await this.api.get('/api/admin/api-keys/active', { 
         params: { provider } 
       });
       return { success: true, data: response.data };
@@ -230,7 +230,7 @@ class ApiService {
   // Chat endpoint
   async chat(message, userId, sessionId = null) {
     try {
-      const response = await this.api.post('/chat', {
+      const response = await this.api.post('/api/chat', {
         message: message,
         user_id: userId,
         session_id: sessionId
@@ -245,7 +245,7 @@ class ApiService {
   // Session management
   async createSession(userId, title = 'New Chat') {
     try {
-      const response = await this.api.post('/user/sessions', {
+      const response = await this.api.post('/api/user/sessions', {
         user_id: userId,
         title: title
       });
@@ -258,7 +258,7 @@ class ApiService {
 
   async updateSession(userId, sessionId, title) {
     try {
-      const response = await this.api.put(`/user/sessions/${sessionId}`, {
+      const response = await this.api.put(`/api/user/sessions/${sessionId}`, {
         user_id: userId,
         title: title
       });
@@ -271,7 +271,7 @@ class ApiService {
 
   async deleteSession(userId, sessionId) {
     try {
-      const response = await this.api.delete(`/user/sessions/${sessionId}`, {
+      const response = await this.api.delete(`/api/user/sessions/${sessionId}`, {
         data: { user_id: userId }
       });
       return { success: true, data: response.data };
@@ -284,7 +284,7 @@ class ApiService {
   // User endpoints
   async getUserPreferences(userId) {
     try {
-      const response = await this.api.get('/user/preferences', {
+      const response = await this.api.get('/api/user/preferences', {
         params: { user_id: userId }
       });
       return { success: true, preferences: response.data.preferences };
@@ -296,7 +296,7 @@ class ApiService {
 
   async updateUserPreferences(userId, preferences) {
     try {
-      await this.api.put('/user/preferences', {
+      await this.api.put('/api/user/preferences', {
         user_id: userId,
         ...preferences
       });
@@ -309,7 +309,7 @@ class ApiService {
 
   async getUserSessions(userId) {
     try {
-      const response = await this.api.get('/user/sessions', {
+      const response = await this.api.get('/api/user/sessions', {
         params: { user_id: userId }
       });
       return { success: true, sessions: response.data.sessions };
@@ -322,7 +322,7 @@ class ApiService {
   async getUserHistory(userId, sessionId = null, limit = 50) {
     try {
       const params = sessionId ? { user_id: userId, session_id: sessionId, limit } : { user_id: userId, limit };
-      const response = await this.api.get('/user/history', { params });
+      const response = await this.api.get('/api/user/history', { params });
       return { success: true, history: response.data.history };
     } catch (error) {
       console.error('Get history error:', error);
@@ -333,7 +333,7 @@ class ApiService {
   // Topology endpoints
   async getTopologyNodes() {
     try {
-      const response = await this.api.get('/topology/nodes');
+      const response = await this.api.get('/api/topology/nodes');
       return { success: true, nodes: response.data.nodes, timestamp: response.data.timestamp };
     } catch (error) {
       console.error('Get topology nodes error:', error);
@@ -343,7 +343,7 @@ class ApiService {
 
   async getNamespaces() {
     try {
-      const response = await this.api.get('/topology/namespaces');
+      const response = await this.api.get('/api/topology/namespaces');
       return { success: true, namespaces: response.data.namespaces };
     } catch (error) {
       console.error('Get namespaces error:', error);
@@ -354,7 +354,7 @@ class ApiService {
   async getTopologyPods(namespace = 'all') {
     try {
       const params = namespace !== 'all' ? { namespace } : {};
-      const response = await this.api.get('/topology/pods', { params });
+      const response = await this.api.get('/api/topology/pods', { params });
       return { success: true, pods: response.data.pods, timestamp: response.data.timestamp };
     } catch (error) {
       console.error('Get topology pods error:', error);
@@ -365,7 +365,7 @@ class ApiService {
   // LLM Configuration endpoints
   async getSupportedLLMProviders() {
     try {
-      const response = await this.api.get('/admin/llm/providers');
+      const response = await this.api.get('/api/admin/llm/providers');
       return { success: true, providers: response.data.providers };
     } catch (error) {
       console.error('Get supported LLM providers error:', error);
@@ -375,7 +375,7 @@ class ApiService {
 
   async getLLMConfigs() {
     try {
-      const response = await this.api.get('/admin/llm/configs');
+      const response = await this.api.get('/api/admin/llm/configs');
       return { success: true, configs: response.data.configs };
     } catch (error) {
       console.error('Get LLM configs error:', error);
@@ -385,7 +385,7 @@ class ApiService {
 
   async createLLMConfig(configData) {
     try {
-      const response = await this.api.post('/admin/llm/configs', configData);
+      const response = await this.api.post('/api/admin/llm/configs', configData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Create LLM config error:', error);
@@ -395,7 +395,7 @@ class ApiService {
 
   async updateLLMConfig(configId, configData) {
     try {
-      const response = await this.api.put(`/admin/llm/configs/${configId}`, configData);
+      const response = await this.api.put(`/api/admin/llm/configs/${configId}`, configData);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Update LLM config error:', error);
@@ -405,7 +405,7 @@ class ApiService {
 
   async deleteLLMConfig(configId) {
     try {
-      const response = await this.api.delete(`/admin/llm/configs/${configId}`);
+      const response = await this.api.delete(`/api/admin/llm/configs/${configId}`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Delete LLM config error:', error);
@@ -415,7 +415,7 @@ class ApiService {
 
   async activateLLMConfig(configId) {
     try {
-      const response = await this.api.post(`/admin/llm/configs/${configId}/activate`);
+      const response = await this.api.post(`/api/admin/llm/configs/${configId}/activate`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Activate LLM config error:', error);
@@ -425,7 +425,7 @@ class ApiService {
 
   async testLLMConfig(configId) {
     try {
-      const response = await this.api.post(`/admin/llm/configs/${configId}/test`);
+      const response = await this.api.post(`/api/admin/llm/configs/${configId}/test`);
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Test LLM config error:', error);
@@ -435,7 +435,7 @@ class ApiService {
 
   async getActiveLLMConfig() {
     try {
-      const response = await this.api.get('/admin/llm/configs/active');
+      const response = await this.api.get('/api/admin/llm/configs/active');
       return { success: true, data: response.data };
     } catch (error) {
       console.error('Get active LLM config error:', error);

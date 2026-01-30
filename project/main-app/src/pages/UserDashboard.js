@@ -7,7 +7,6 @@ import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const UserDashboard = ({ user, onLogout }) => {
   const [greeting, setGreeting] = useState('');
@@ -211,231 +210,230 @@ const UserDashboard = ({ user, onLogout }) => {
   };
 
   // Updated handleSendMessage with streaming support
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
+const handleSendMessage = async (e) => {
+  e.preventDefault();
 
-    if (!message.trim() || isLoading) {
-      return;
-    }
+  if (!message.trim() || isLoading) {
+    return;
+  }
 
-    // If this is a temporary session, save it first
-    let actualSessionId = currentSessionId;
-    if (tempSessionId && currentSessionId === tempSessionId) {
-      try {
-        const response = await apiService.createSession(user.id, 'New Chat');
-        if (response.success) {
-          actualSessionId = response.data.session_id;
-          setCurrentSessionId(actualSessionId);
-          setTempSessionId(null);
-
-          // Replace temporary session with real session in sessions list
-          setSessions(prev => prev.map(s =>
-            s.session_id === tempSessionId
-              ? {
-                  session_id: actualSessionId,
-                  title: response.data.title,
-                  created_at: new Date().toISOString(),
-                  last_activity: new Date().toISOString(),
-                  message_count: 0
-                }
-              : s
-          ));
-        }
-      } catch (error) {
-        console.error('Failed to create session:', error);
-        setError('Failed to create new chat');
-        return;
-      }
-    }
-
-    const userMessage = {
-      id: Date.now(),
-      role: 'user',
-      content: message.trim(),
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    const messageText = message.trim();
-    setMessage('');
-    setIsLoading(true);
-    setError('');
-    setStreamingStatus('connecting');
-
-    // Create placeholder for assistant message that will be updated
-    const assistantMessageId = Date.now() + 1;
-    const assistantMessage = {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      isStreaming: true
-    };
-    setMessages(prev => [...prev, assistantMessage]);
-
-    let executedCommands = [];
-
+  // If this is a temporary session, save it first
+  let actualSessionId = currentSessionId;
+  if (tempSessionId && currentSessionId === tempSessionId) {
     try {
-      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Send HttpOnly cookies
-        body: JSON.stringify({
-          message: messageText,
-          session_id: actualSessionId
-        })
-      });
+      const response = await apiService.createSession(user.id, 'New Chat');
+      if (response.success) {
+        actualSessionId = response.data.session_id;
+        setCurrentSessionId(actualSessionId);
+        setTempSessionId(null);
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      setStreamingStatus('streaming');
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) {
-          break;
-        }
-
-        // Decode chunk and add to buffer
-        buffer += decoder.decode(value, { stream: true });
-
-        // Split by double newlines to get complete events
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || ''; // Keep incomplete event in buffer
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine || trimmedLine === '') {
-            continue;
-          }
-
-          const event = parseSSEEvent(trimmedLine);
-          if (!event) {
-            continue;
-          }
-
-          // Handle different event types
-          switch (event.type) {
-            case 'metadata':
-              // Update streaming status based on response type
-              if (event.response_type === 'investigation') {
-                setStreamingStatus('investigating');
-              } else {
-                setStreamingStatus('chatting');
-              }
-              break;
-
-            case 'content':
-              // Append content chunk to assistant message
-              setMessages(prev => prev.map(msg =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + event.content }
-                  : msg
-              ));
-              scrollToBottom();
-              break;
-
-            case 'command_executing':
-              setStreamingStatus({ type: 'command_executing', command: event.command });
-              break;
-
-            case 'command_completed':
-              executedCommands.push(event.command);
-              setStreamingStatus({ type: 'command_completed', command: event.command, success: event.success });
-              break;
-
-            case 'command_blocked':
-              console.warn('Command blocked:', event.command, event.reason);
-              setMessages(prev => {
-                const updated = [...prev];
-                const msgIndex = updated.findIndex(m => m.id === assistantMessageId);
-                if (msgIndex >= 0) {
-                  updated[msgIndex] = {
-                    ...updated[msgIndex],
-                    content: updated[msgIndex].content + `\n\n⚠️ **Command blocked:** ${event.command}\n*Reason: ${event.reason}*`
-                  };
-                }
-                return updated;
-              });
-              scrollToBottom();
-              break;
-
-            case 'analysis_start':
-              setStreamingStatus('analyzing');
-              break;
-
-            case 'error':
-              console.error('Streaming error:', event.error);
-              setMessages(prev => prev.map(msg =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: `Error: ${event.error}`, isError: true, isStreaming: false }
-                  : msg
-              ));
-              scrollToBottom();
-              break;
-
-            case 'done':
-              setStreamingStatus('done');
-              executedCommands = event.commands_executed || [];
-              // Mark message as complete
-              setMessages(prev => prev.map(msg =>
-                msg.id === assistantMessageId
-                  ? { ...msg, isStreaming: false }
-                  : msg
-              ));
-              break;
-
-            default:
-              console.log('Unknown event type:', event.type);
-          }
-        }
-      }
-
-      // Update session after streaming is complete
-      const sessionMessages = messages.filter(m => m.role === 'user');
-      if (sessionMessages.length === 0) {
-        const newTitle = messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '');
-        try {
-          await apiService.updateSession(user.id, actualSessionId, newTitle);
-          setSessions(prev => prev.map(s =>
-            s.session_id === actualSessionId
-              ? { ...s, title: newTitle, message_count: s.message_count + 2 }
-              : s
-          ));
-        } catch (error) {
-          console.error('Failed to update session title:', error);
-        }
-      } else {
+        // Replace temporary session with real session in sessions list
         setSessions(prev => prev.map(s =>
-          s.session_id === actualSessionId
-            ? { ...s, message_count: s.message_count + 2 }
+          s.session_id === tempSessionId
+            ? {
+                session_id: actualSessionId,
+                title: response.data.title,
+                created_at: new Date().toISOString(),
+                last_activity: new Date().toISOString(),
+                message_count: 0
+              }
             : s
         ));
       }
-
     } catch (error) {
-      console.error('Streaming error:', error);
-      setMessages(prev => prev.map(msg =>
-        msg.id === assistantMessageId
-          ? { ...msg, content: 'Sorry, I encountered an error. Please try again.', isError: true, isStreaming: false }
-          : msg
-      ));
-      setError('Failed to send message');
-    } finally {
-      setIsLoading(false);
-      setStreamingStatus(null);
+      console.error('Failed to create session:', error);
+      setError('Failed to create new chat');
+      return;
     }
+  }
+
+  const userMessage = {
+    id: Date.now(),
+    role: 'user',
+    content: message.trim(),
+    timestamp: new Date().toISOString()
   };
 
+  setMessages(prev => [...prev, userMessage]);
+  const messageText = message.trim();
+  setMessage('');
+  setIsLoading(true);
+  setError('');
+  setStreamingStatus('connecting');
+
+  // Create placeholder for assistant message that will be updated
+  const assistantMessageId = Date.now() + 1;
+  const assistantMessage = {
+    id: assistantMessageId,
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString(),
+    isStreaming: true
+  };
+  setMessages(prev => [...prev, assistantMessage]);
+
+  let executedCommands = [];
+
+  try {
+    const response = await fetch(`/api/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include', // Send HttpOnly cookies
+      body: JSON.stringify({
+        message: messageText,
+        session_id: actualSessionId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    setStreamingStatus('streaming');
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      // Decode chunk and add to buffer
+      buffer += decoder.decode(value, { stream: true });
+
+      // Split by double newlines to get complete events
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || ''; // Keep incomplete event in buffer
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine === '') {
+          continue;
+        }
+
+        const event = parseSSEEvent(trimmedLine);
+        if (!event) {
+          continue;
+        }
+
+        // Handle different event types
+        switch (event.type) {
+          case 'metadata':
+            // Update streaming status based on response type
+            if (event.response_type === 'investigation') {
+              setStreamingStatus('investigating');
+            } else {
+              setStreamingStatus('chatting');
+            }
+            break;
+
+          case 'content':
+            // Append content chunk to assistant message
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + event.content }
+                : msg
+            ));
+            scrollToBottom();
+            break;
+
+          case 'command_executing':
+            setStreamingStatus({ type: 'command_executing', command: event.command });
+            break;
+
+          case 'command_completed':
+            executedCommands.push(event.command);
+            setStreamingStatus({ type: 'command_completed', command: event.command, success: event.success });
+            break;
+
+          case 'command_blocked':
+            console.warn('Command blocked:', event.command, event.reason);
+            setMessages(prev => {
+              const updated = [...prev];
+              const msgIndex = updated.findIndex(m => m.id === assistantMessageId);
+              if (msgIndex >= 0) {
+                updated[msgIndex] = {
+                  ...updated[msgIndex],
+                  content: updated[msgIndex].content + `\n\n⚠️ **Command blocked:** ${event.command}\n*Reason: ${event.reason}*`
+                };
+              }
+              return updated;
+            });
+            scrollToBottom();
+            break;
+
+          case 'analysis_start':
+            setStreamingStatus('analyzing');
+            break;
+
+          case 'error':
+            console.error('Streaming error:', event.error);
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: `Error: ${event.error}`, isError: true, isStreaming: false }
+                : msg
+            ));
+            scrollToBottom();
+            break;
+
+          case 'done':
+            setStreamingStatus('done');
+            executedCommands = event.commands_executed || [];
+            // Mark message as complete
+            setMessages(prev => prev.map(msg =>
+              msg.id === assistantMessageId
+                ? { ...msg, isStreaming: false }
+                : msg
+            ));
+            break;
+
+          default:
+            console.log('Unknown event type:', event.type);
+        }
+      }
+    }
+
+    // Update session after streaming is complete
+    const sessionMessages = messages.filter(m => m.role === 'user');
+    if (sessionMessages.length === 0) {
+      const newTitle = messageText.substring(0, 30) + (messageText.length > 30 ? '...' : '');
+      try {
+        await apiService.updateSession(user.id, actualSessionId, newTitle);
+        setSessions(prev => prev.map(s =>
+          s.session_id === actualSessionId
+            ? { ...s, title: newTitle, message_count: s.message_count + 2 }
+            : s
+        ));
+      } catch (error) {
+        console.error('Failed to update session title:', error);
+      }
+    } else {
+      setSessions(prev => prev.map(s =>
+        s.session_id === actualSessionId
+          ? { ...s, message_count: s.message_count + 2 }
+          : s
+      ));
+    }
+
+  } catch (error) {
+    console.error('Streaming error:', error);
+    setMessages(prev => prev.map(msg =>
+      msg.id === assistantMessageId
+        ? { ...msg, content: 'Sorry, I encountered an error. Please try again.', isError: true, isStreaming: false }
+        : msg
+    ));
+    setError('Failed to send message');
+  } finally {
+    setIsLoading(false);
+    setStreamingStatus(null);
+  }
+};
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();

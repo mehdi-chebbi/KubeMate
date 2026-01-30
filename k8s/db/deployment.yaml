@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubemate-postgres
+  labels:
+    app: kubemate-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubemate-postgres
+  template:
+    metadata:
+      labels:
+        app: kubemate-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: kubemate
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: kubemate-secrets
+              key: db-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: kubemate-secrets
+              key: db-password
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - $(POSTGRES_USER)
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - $(POSTGRES_USER)
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: kubemate-postgres-pvc

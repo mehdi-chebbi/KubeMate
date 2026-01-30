@@ -145,23 +145,30 @@ class Database:
 
     """Database manager for K8s Audit Bot using PostgreSQL"""
     
-    def __init__(self, host='postgres', port=5432, database='k8s_bot', 
-                 user='bot_user', password='bot_password_123', min_conn=1, max_conn=10):
-        """Initialize database connection pool"""
+    def __init__(self, host=None, port=None, database=None, 
+                 user=None, password=None, min_conn=1, max_conn=10):
+        """Initialize database connection pool with configurable parameters"""
+        # Get database configuration from environment variables or use defaults
+        db_host = host or os.environ.get('DB_HOST', 'postgres')
+        db_port = int(port or os.environ.get('DB_PORT', '5432'))
+        db_name = database or os.environ.get('DB_NAME', 'k8s_bot')
+        db_user = user or os.environ.get('DB_USER', 'bot_user')
+        db_password = password or os.environ.get('DB_PASSWORD', 'bot_password_123')
+        
         self.connection_pool = None
         try:
             self.connection_pool = psycopg2.pool.SimpleConnectionPool(
                 min_conn,
                 max_conn,
-                host=host,
-                port=port,
-                database=database,
-                user=user,
-                password=password
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_password
             )
             
             if self.connection_pool:
-                logger.info(f"Connected to PostgreSQL database: {database}")
+                logger.info(f"Connected to PostgreSQL database: {db_name} at {db_host}:{db_port}")
                 self._init_tables()
             else:
                 raise Exception("Failed to create connection pool")

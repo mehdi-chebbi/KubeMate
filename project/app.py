@@ -159,7 +159,7 @@ def determine_role_from_system_pods(node_name, k8s_client):
 def create_app():
     """Create and configure Flask application with proper error handling"""
     app = Flask(__name__)
-    CORS(app, supports_credentials=True, origins=['http://localhost:3000'])  # Enable CORS with credentials support
+    CORS(app, supports_credentials=True, origins='*')  # Allow all origins
     
     # Initialize components with error handling
     k8s_client = None
@@ -211,7 +211,7 @@ def create_app():
 # Create application instance
 app = create_app()
 
-@app.route('/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
 def health_check():
     """Enhanced health check endpoint with comprehensive status and caching"""
     
@@ -318,7 +318,7 @@ def health_check():
 
 # ==================== AUTHENTICATION ENDPOINTS ====================
 
-@app.route('/auth/signup', methods=['POST'])
+@app.route('/api/auth/signup', methods=['POST'])
 def signup():
     """User registration endpoint"""
     try:
@@ -369,7 +369,7 @@ def signup():
             'error': 'Registration failed. Please try again.'
         }), 500
 
-@app.route('/auth/login', methods=['POST'])
+@app.route('/api/auth/login', methods=['POST'])
 def login():
     """User login endpoint"""
     try:
@@ -407,11 +407,12 @@ def login():
         
         # Set secure HttpOnly cookie
         is_production = os.environ.get('FLASK_ENV') == 'production'
+        cookie_secure = os.environ.get('COOKIE_SECURE', 'false').lower() == 'true'
         response.set_cookie(
             'session_id',
             session_id,
             httponly=True,      # Prevents JavaScript access
-            secure=is_production,  # Only over HTTPS in production
+            secure=cookie_secure,  # Configurable via COOKIE_SECURE env var
             samesite='Lax',     # CSRF protection
             max_age=86400,      # 24 hours
             path='/'            # Available across entire site
@@ -423,7 +424,7 @@ def login():
         logger.error(f"Login error: {str(e)}")
         return jsonify({'error': 'Login failed'}), 500
 
-@app.route('/auth/logout', methods=['POST'])
+@app.route('/api/auth/logout', methods=['POST'])
 def logout():
     """User logout endpoint"""
     try:
@@ -455,7 +456,7 @@ def logout():
 
 # ==================== ADMIN ENDPOINTS ====================
 
-@app.route('/admin/users', methods=['GET'])
+@app.route('/api/admin/users', methods=['GET'])
 @require_admin_auth
 def get_users():
     """Get all users (admin only)"""
@@ -467,7 +468,7 @@ def get_users():
         logger.error(f"Error getting users: {str(e)}")
         return jsonify({'error': 'Failed to get users'}), 500
 
-@app.route('/admin/users', methods=['POST'])
+@app.route('/api/admin/users', methods=['POST'])
 @require_admin_auth
 def create_user():
     """Create new user (admin only)"""
@@ -496,7 +497,7 @@ def create_user():
         logger.error(f"Error creating user: {str(e)}")
         return jsonify({'error': 'Failed to create user'}), 500
 
-@app.route('/admin/users/<int:user_id>/ban', methods=['POST'])
+@app.route('/api/admin/users/<int:user_id>/ban', methods=['POST'])
 @require_admin_auth
 def ban_user(user_id):
     """Ban a user (admin only)"""
@@ -512,7 +513,7 @@ def ban_user(user_id):
         logger.error(f"Error banning user: {str(e)}")
         return jsonify({'error': 'Failed to ban user'}), 500
 
-@app.route('/admin/users/<int:user_id>/unban', methods=['POST'])
+@app.route('/api/admin/users/<int:user_id>/unban', methods=['POST'])
 @require_admin_auth
 def unban_user(user_id):
     """Unban a user (admin only)"""
@@ -528,7 +529,7 @@ def unban_user(user_id):
         logger.error(f"Error unbanning user: {str(e)}")
         return jsonify({'error': 'Failed to unban user'}), 500
 
-@app.route('/admin/users/<int:user_id>/role', methods=['PUT'])
+@app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
 @require_admin_auth
 def update_user_role(user_id):
     """Update user role (admin only)"""
@@ -554,7 +555,7 @@ def update_user_role(user_id):
         logger.error(f"Error updating user role: {str(e)}")
         return jsonify({'error': 'Failed to update role'}), 500
 
-@app.route('/admin/users/<int:user_id>/password', methods=['PUT'])
+@app.route('/api/admin/users/<int:user_id>/password', methods=['PUT'])
 @require_admin_auth
 def change_user_password(user_id):
     """Change user password (admin only)"""
@@ -576,7 +577,7 @@ def change_user_password(user_id):
         logger.error(f"Error changing password: {str(e)}")
         return jsonify({'error': 'Failed to change password'}), 500
 
-@app.route('/admin/logs', methods=['GET'])
+@app.route('/api/admin/logs', methods=['GET'])
 @require_admin_auth
 def get_activity_logs():
     """Get activity logs (admin only)"""
@@ -593,7 +594,7 @@ def get_activity_logs():
 
 # ==================== USER ENDPOINTS ====================
 
-@app.route('/user/preferences', methods=['GET'])
+@app.route('/api/user/preferences', methods=['GET'])
 @require_user_auth
 def get_preferences():
     """Get user preferences"""
@@ -615,7 +616,7 @@ def get_preferences():
         logger.error(f"Error getting preferences: {str(e)}")
         return jsonify({'error': 'Failed to get preferences'}), 500
 
-@app.route('/user/preferences', methods=['PUT'])
+@app.route('/api/user/preferences', methods=['PUT'])
 @require_user_auth
 def update_preferences():
     """Update user preferences"""
@@ -645,7 +646,7 @@ def update_preferences():
         logger.error(f"Error updating preferences: {str(e)}")
         return jsonify({'error': 'Failed to update preferences'}), 500
 
-@app.route('/user/sessions', methods=['GET'])
+@app.route('/api/user/sessions', methods=['GET'])
 @require_user_auth
 def get_user_sessions():
     """Get all chat sessions for a user"""
@@ -663,7 +664,7 @@ def get_user_sessions():
         logger.error(f"Error getting sessions: {str(e)}")
         return jsonify({'error': 'Failed to get sessions'}), 500
 
-@app.route('/user/history', methods=['GET'])
+@app.route('/api/user/history', methods=['GET'])
 @require_user_auth
 def get_user_history():
     """Get chat history for a user"""
@@ -683,7 +684,7 @@ def get_user_history():
         logger.error(f"Error getting history: {str(e)}")
         return jsonify({'error': 'Failed to get history'}), 500
 
-@app.route('/user/history', methods=['DELETE'])
+@app.route('/api/user/history', methods=['DELETE'])
 @require_user_auth
 def delete_user_history():
     """Delete chat history for a user"""
@@ -707,7 +708,7 @@ def delete_user_history():
         logger.error(f"Error deleting history: {str(e)}")
         return jsonify({'error': 'Failed to delete history'}), 500
 
-@app.route('/user/sessions', methods=['POST'])
+@app.route('/api/user/sessions', methods=['POST'])
 @require_user_auth
 def create_chat_session():
     """Create a new chat session"""
@@ -739,7 +740,7 @@ def create_chat_session():
         logger.error(f"Error creating session: {str(e)}")
         return jsonify({'error': 'Failed to create session'}), 500
 
-@app.route('/user/sessions/<session_id>', methods=['PUT'])
+@app.route('/api/user/sessions/<session_id>', methods=['PUT'])
 @require_user_auth
 def update_chat_session(session_id):
     """Update chat session title"""
@@ -763,7 +764,7 @@ def update_chat_session(session_id):
         logger.error(f"Error updating session: {str(e)}")
         return jsonify({'error': 'Failed to update session'}), 500
 
-@app.route('/user/sessions/<session_id>', methods=['DELETE'])
+@app.route('/api/user/sessions/<session_id>', methods=['DELETE'])
 @require_user_auth
 def delete_chat_session(session_id):
     """Delete a chat session"""
@@ -1134,7 +1135,7 @@ def read_pod_file(namespace, pod_name):
         }), 500
 
 # ==================== CHAT ENDPOINT ====================
-@app.route('/chat/stream', methods=['POST'])
+@app.route('/api/chat/stream', methods=['POST'])
 @require_user_auth
 def chat_stream():
     """
@@ -1350,7 +1351,7 @@ def chat_stream():
         return jsonify({'error': 'An error occurred processing your request'}), 500
 
         
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 @require_user_auth
 def chat():
     """
@@ -1646,7 +1647,7 @@ def chat():
 
 # ==================== KUBECONFIG ENDPOINTS ====================
 
-@app.route('/admin/kubeconfigs', methods=['GET'])
+@app.route('/api/admin/kubeconfigs', methods=['GET'])
 @require_admin_auth
 def get_kubeconfigs():
     """Get all kubeconfigurations (admin only)"""
@@ -1658,7 +1659,7 @@ def get_kubeconfigs():
         logger.error(f"Error getting kubeconfigs: {str(e)}")
         return jsonify({'error': 'Failed to get kubeconfigs'}), 500
 
-@app.route('/admin/kubeconfigs', methods=['POST'])
+@app.route('/api/admin/kubeconfigs', methods=['POST'])
 @require_admin_auth
 def create_kubeconfig():
     """Create new kubeconfig (admin only) - Service Account only"""
@@ -1710,7 +1711,7 @@ def create_kubeconfig():
         logger.error(f"Error creating kubeconfig: {str(e)}")
         return jsonify({'error': 'Failed to create kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/<int:kubeconfig_id>', methods=['GET'])
+@app.route('/api/admin/kubeconfigs/<int:kubeconfig_id>', methods=['GET'])
 @require_admin_auth
 def get_kubeconfig(kubeconfig_id):
     """Get a specific kubeconfig (admin only)"""
@@ -1726,7 +1727,7 @@ def get_kubeconfig(kubeconfig_id):
         logger.error(f"Error getting kubeconfig {kubeconfig_id}: {str(e)}")
         return jsonify({'error': 'Failed to get kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/<int:kubeconfig_id>', methods=['PUT'])
+@app.route('/api/admin/kubeconfigs/<int:kubeconfig_id>', methods=['PUT'])
 @require_admin_auth
 def update_kubeconfig(kubeconfig_id):
     """Update a kubeconfig (admin only) - Service Account only"""
@@ -1768,7 +1769,7 @@ def update_kubeconfig(kubeconfig_id):
         logger.error(f"Error updating kubeconfig {kubeconfig_id}: {str(e)}")
         return jsonify({'error': 'Failed to update kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/<int:kubeconfig_id>', methods=['DELETE'])
+@app.route('/api/admin/kubeconfigs/<int:kubeconfig_id>', methods=['DELETE'])
 @require_admin_auth
 def delete_kubeconfig(kubeconfig_id):
     """Delete a kubeconfig (admin only)"""
@@ -1788,7 +1789,7 @@ def delete_kubeconfig(kubeconfig_id):
         logger.error(f"Error deleting kubeconfig {kubeconfig_id}: {str(e)}")
         return jsonify({'error': 'Failed to delete kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/<int:kubeconfig_id>/activate', methods=['POST'])
+@app.route('/api/admin/kubeconfigs/<int:kubeconfig_id>/activate', methods=['POST'])
 @require_admin_auth
 def activate_kubeconfig(kubeconfig_id):
     """Set a kubeconfig as active (admin only)"""
@@ -1808,7 +1809,7 @@ def activate_kubeconfig(kubeconfig_id):
         logger.error(f"Error activating kubeconfig {kubeconfig_id}: {str(e)}")
         return jsonify({'error': 'Failed to activate kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/<int:kubeconfig_id>/test', methods=['POST'])
+@app.route('/api/admin/kubeconfigs/<int:kubeconfig_id>/test', methods=['POST'])
 @require_admin_auth
 def test_kubeconfig(kubeconfig_id):
     """Test a kubeconfig connection (admin only)"""
@@ -1880,7 +1881,7 @@ def test_kubeconfig(kubeconfig_id):
         logger.error(f"Error testing kubeconfig {kubeconfig_id}: {str(e)}")
         return jsonify({'error': 'Failed to test kubeconfig'}), 500
 
-@app.route('/admin/kubeconfigs/active', methods=['GET'])
+@app.route('/api/admin/kubeconfigs/active', methods=['GET'])
 @require_admin_auth
 def get_active_kubeconfig():
     """Get currently active kubeconfig (admin only)"""
@@ -1898,7 +1899,7 @@ def get_active_kubeconfig():
 
 # ==================== API KEYS ENDPOINTS ====================
 
-@app.route('/admin/api-keys', methods=['GET'])
+@app.route('/api/admin/api-keys', methods=['GET'])
 @require_admin_auth
 def get_api_keys():
     """Get all API keys (admin only)"""
@@ -1910,7 +1911,7 @@ def get_api_keys():
         logger.error(f"Error getting API keys: {str(e)}")
         return jsonify({'error': 'Failed to get API keys'}), 500
 
-@app.route('/admin/api-keys', methods=['POST'])
+@app.route('/api/admin/api-keys', methods=['POST'])
 @require_admin_auth
 def create_api_key():
     """Create new API key (admin only)"""
@@ -1940,7 +1941,7 @@ def create_api_key():
         logger.error(f"Error creating API key: {str(e)}")
         return jsonify({'error': 'Failed to create API key'}), 500
 
-@app.route('/admin/api-keys/<int:api_key_id>', methods=['GET'])
+@app.route('/api/admin/api-keys/<int:api_key_id>', methods=['GET'])
 @require_admin_auth
 def get_api_key(api_key_id):
     """Get specific API key (admin only)"""
@@ -1956,7 +1957,7 @@ def get_api_key(api_key_id):
         logger.error(f"Error getting API key {api_key_id}: {str(e)}")
         return jsonify({'error': 'Failed to get API key'}), 500
 
-@app.route('/admin/api-keys/<int:api_key_id>', methods=['PUT'])
+@app.route('/api/admin/api-keys/<int:api_key_id>', methods=['PUT'])
 @require_admin_auth
 def update_api_key(api_key_id):
     """Update API key (admin only)"""
@@ -1983,7 +1984,7 @@ def update_api_key(api_key_id):
         logger.error(f"Error updating API key {api_key_id}: {str(e)}")
         return jsonify({'error': 'Failed to update API key'}), 500
 
-@app.route('/admin/api-keys/<int:api_key_id>', methods=['DELETE'])
+@app.route('/api/admin/api-keys/<int:api_key_id>', methods=['DELETE'])
 @require_admin_auth
 def delete_api_key(api_key_id):
     """Delete API key (admin only)"""
@@ -1999,7 +2000,7 @@ def delete_api_key(api_key_id):
         logger.error(f"Error deleting API key {api_key_id}: {str(e)}")
         return jsonify({'error': 'Failed to delete API key'}), 500
 
-@app.route('/admin/api-keys/<int:api_key_id>/activate', methods=['POST'])
+@app.route('/api/admin/api-keys/<int:api_key_id>/activate', methods=['POST'])
 @require_admin_auth
 def activate_api_key(api_key_id):
     """Activate API key (admin only)"""
@@ -2015,7 +2016,7 @@ def activate_api_key(api_key_id):
         logger.error(f"Error activating API key {api_key_id}: {str(e)}")
         return jsonify({'error': 'Failed to activate API key'}), 500
 
-@app.route('/admin/api-keys/active', methods=['GET'])
+@app.route('/api/admin/api-keys/active', methods=['GET'])
 @require_admin_auth
 def get_active_api_key():
     """Get currently active API key (admin only)"""
@@ -2047,7 +2048,7 @@ def get_active_api_key():
 
 # ==================== LLM CONFIGURATION ENDPOINTS ====================
 
-@app.route('/admin/llm/providers', methods=['GET'])
+@app.route('/api/admin/llm/providers', methods=['GET'])
 @require_admin_auth
 def get_supported_llm_providers():
     """Get list of supported LLM providers (admin only)"""
@@ -2058,7 +2059,7 @@ def get_supported_llm_providers():
         logger.error(f"Error getting supported LLM providers: {str(e)}")
         return jsonify({'error': 'Failed to get supported LLM providers'}), 500
 
-@app.route('/admin/llm/configs', methods=['GET'])
+@app.route('/api/admin/llm/configs', methods=['GET'])
 @require_admin_auth
 def get_llm_configs():
     """Get all LLM configurations (admin only)"""
@@ -2069,7 +2070,7 @@ def get_llm_configs():
         logger.error(f"Error getting LLM configs: {str(e)}")
         return jsonify({'error': 'Failed to get LLM configurations'}), 500
 
-@app.route('/admin/llm/configs', methods=['POST'])
+@app.route('/api/admin/llm/configs', methods=['POST'])
 @require_admin_auth
 def create_llm_config():
     """Create a new LLM configuration (admin only)"""
@@ -2113,7 +2114,7 @@ def create_llm_config():
         logger.error(f"Error creating LLM config: {str(e)}")
         return jsonify({'error': 'Failed to create LLM configuration'}), 500
 
-@app.route('/admin/llm/configs/<int:config_id>', methods=['PUT'])
+@app.route('/api/admin/llm/configs/<int:config_id>', methods=['PUT'])
 @require_admin_auth
 def update_llm_config(config_id):
     """Update an LLM configuration (admin only)"""
@@ -2161,7 +2162,7 @@ def update_llm_config(config_id):
         logger.error(f"Error updating LLM config {config_id}: {str(e)}")
         return jsonify({'error': 'Failed to update LLM configuration'}), 500
 
-@app.route('/admin/llm/configs/<int:config_id>', methods=['DELETE'])
+@app.route('/api/admin/llm/configs/<int:config_id>', methods=['DELETE'])
 @require_admin_auth
 def delete_llm_config(config_id):
     """Delete an LLM configuration (admin only)"""
@@ -2183,7 +2184,7 @@ def delete_llm_config(config_id):
         logger.error(f"Error deleting LLM config {config_id}: {str(e)}")
         return jsonify({'error': 'Failed to delete LLM configuration'}), 500
 
-@app.route('/admin/llm/configs/<int:config_id>/activate', methods=['POST'])
+@app.route('/api/admin/llm/configs/<int:config_id>/activate', methods=['POST'])
 @require_admin_auth
 def activate_llm_config(config_id):
     """Activate an LLM configuration (admin only)"""
@@ -2205,7 +2206,7 @@ def activate_llm_config(config_id):
         logger.error(f"Error activating LLM config {config_id}: {str(e)}")
         return jsonify({'error': 'Failed to activate LLM configuration'}), 500
 
-@app.route('/admin/llm/configs/<int:config_id>/test', methods=['POST'])
+@app.route('/api/admin/llm/configs/<int:config_id>/test', methods=['POST'])
 @require_admin_auth
 def test_llm_config(config_id):
     """Test an LLM configuration (admin only)"""
@@ -2257,7 +2258,7 @@ def test_llm_config(config_id):
         logger.error(f"Error testing LLM config {config_id}: {str(e)}")
         return jsonify({'error': 'Failed to test LLM configuration'}), 500
 
-@app.route('/admin/llm/configs/active', methods=['GET'])
+@app.route('/api/admin/llm/configs/active', methods=['GET'])
 @require_admin_auth
 def get_active_llm_config():
     """Get currently active LLM configuration (admin only)"""
@@ -2292,7 +2293,7 @@ def get_active_llm_config():
         return jsonify({'error': 'Failed to get active LLM configuration'}), 500
 
 # ==================== TOPOLOGY ENDPOINTS ====================
-@app.route('/topology/nodes', methods=['GET'])
+@app.route('/api/topology/nodes', methods=['GET'])
 @require_user_auth
 def get_topology_nodes():
     """Get node topology data for 3D visualization"""
@@ -2423,7 +2424,7 @@ def get_topology_nodes():
         logger.error(f"Error getting topology nodes: {str(e)}")
         return jsonify({'error': 'Failed to get topology nodes', 'nodes': []}), 500
 
-@app.route('/topology/namespaces', methods=['GET'])
+@app.route('/api/topology/namespaces', methods=['GET'])
 @require_user_auth
 def get_topology_namespaces():
     """Get all namespaces for filtering"""
@@ -2481,7 +2482,7 @@ def get_topology_namespaces():
         logger.error(f"Error getting topology namespaces: {str(e)}")
         return jsonify({'error': 'Failed to get topology namespaces', 'namespaces': []}), 500
 
-@app.route('/topology/pods', methods=['GET'])
+@app.route('/api/topology/pods', methods=['GET'])
 @require_user_auth
 def get_topology_pods():
     """Get pod topology data with namespace filtering"""
