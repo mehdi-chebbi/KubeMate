@@ -1,0 +1,26 @@
+{{- /*
+Post-install notes for chat-app
+*/ -}}
+
+🎉 Your chat app is deployed in the "kubemate" namespace!
+
+Default info for testing:
+
+- DB user: test
+- DB password: test123
+- Namespace: kubemate
+
+Port-forward to access services locally:
+
+- Backend:
+  kubectl port-forward svc/service-backend 8080:80 -n kubemate
+- Frontend:
+  kubectl port-forward svc/service-frontend 3000:80 -n kubemate
+- DB (optional):
+  kubectl port-forward svc/service-db 5432:5432 -n kubemate
+
+Check resources:
+
+  kubectl get pods -n kubemate
+  kubectl get svc -n kubemate
+  kubectl get secrets -n kubemate

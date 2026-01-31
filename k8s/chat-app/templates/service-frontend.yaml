@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubemate-frontend
+  namespace: kubemate
+  labels:
+    app: kubemate-frontend
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  selector:
+    app: kubemate-frontend
+  type: ClusterIP

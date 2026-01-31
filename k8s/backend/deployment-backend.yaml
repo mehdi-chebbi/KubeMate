@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kubemate-backend
+  namespace: kubemate
   labels:
     app: kubemate-backend
 spec:
@@ -54,6 +55,9 @@ spec:
           value: "true"
         - name: COOKIE_SAMESITE
           value: "Lax"
+        volumeMounts:
+        - name: kubeconfigs-storage
+          mountPath: /app/kubeconfigs
         resources:
           requests:
             memory: "256Mi"
@@ -77,3 +81,7 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+      volumes:
+      - name: kubeconfigs-storage
+        persistentVolumeClaim:
+          claimName: kubemate-backend-pvc
