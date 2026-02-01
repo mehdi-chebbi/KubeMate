@@ -86,3 +86,4 @@ annotations:
     - Requires PostgreSQL 12+
     - Works with OpenShift 4.10+
     - Compatible with any cloud provider (AWS, GCP, Azure)
+
