@@ -1,0 +1,8 @@
+# Docker volumes
+postgres_data/
+kubeconfig_data/
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml

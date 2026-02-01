@@ -1,0 +1,577 @@
+import axios from 'axios';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
+class ApiService {
+  constructor() {
+    // Create base API instance with credentials support
+    this.api = axios.create({
+      baseURL: API_BASE_URL,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      withCredentials: true, // This sends HttpOnly cookies automatically
+    });
+
+    // Add response interceptor to handle auth errors
+    this.api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          // Session expired or invalid - clear user data and redirect to login
+          localStorage.removeItem('userData');
+          window.location.href = '/login';
+        } else if (error.response?.status === 403) {
+          // Access denied - show error
+          console.error('Access denied:', error.response.data.error);
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // Health check
+  async getHealth() {
+    try {
+      const response = await this.api.get('/api/health');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Health check error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Admin endpoints
+  async getUsers() {
+    try {
+      const response = await this.api.get('/api/admin/users');
+      return { success: true, users: response.data.users };
+    } catch (error) {
+      console.error('Get users error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get users' };
+    }
+  }
+
+  async createUser(userData) {
+    try {
+      const response = await this.api.post('/api/admin/users', userData);
+      return { success: true, user: response.data };
+    } catch (error) {
+      console.error('Create user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to create user' };
+    }
+  }
+
+  async banUser(userId) {
+    try {
+      await this.api.post(`/api/admin/users/${userId}/ban`);
+      return { success: true };
+    } catch (error) {
+      console.error('Ban user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to ban user' };
+    }
+  }
+
+  async unbanUser(userId) {
+    try {
+      await this.api.post(`/api/admin/users/${userId}/unban`);
+      return { success: true };
+    } catch (error) {
+      console.error('Unban user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to unban user' };
+    }
+  }
+
+  async changeUserPassword(userId, newPassword) {
+    try {
+      const response = await this.api.put(`/api/admin/users/${userId}/password`, {
+        new_password: newPassword
+      });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Change user password error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to change user password' };
+    }
+  }
+
+  async updateUser(userId, userData) {
+    try {
+      const response = await this.api.put(`/api/admin/users/${userId}`, userData);
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Update user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update user' };
+    }
+  }
+
+  async deleteUser(userId) {
+    try {
+      const response = await this.api.delete(`/api/admin/users/${userId}`);
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Delete user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete user' };
+    }
+  }
+
+  async changeOwnPassword(currentPassword, newPassword) {
+    try {
+      const response = await this.api.put('/api/user/password', {
+        current_password: currentPassword,
+        new_password: newPassword
+      });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Change own password error:', error);
+      if (error.response?.status === 401) {
+        return { success: false, error: 'Current password is incorrect' };
+      }
+      return { success: false, error: error.response?.data?.error || 'Failed to change password' };
+    }
+  }
+
+  async getActivityLogs(userId = null, limit = 100) {
+    try {
+      const params = userId ? { user_id: userId, limit } : { limit };
+      const response = await this.api.get('/api/admin/logs', { params });
+      return { success: true, logs: response.data.logs };
+    } catch (error) {
+      console.error('Get activity logs error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get activity logs' };
+    }
+  }
+
+
+  // Kubeconfig endpoints
+  async getKubeconfigs() {
+    try {
+      const response = await this.api.get('/api/admin/kubeconfigs');
+      return { success: true, kubeconfigs: response.data.kubeconfigs };
+    } catch (error) {
+      console.error('Get kubeconfigs error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get kubeconfigs' };
+    }
+  }
+
+  async createKubeconfig(kubeconfigData) {
+    try {
+      const response = await this.api.post('/api/admin/kubeconfigs', kubeconfigData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to create kubeconfig' };
+    }
+  }
+
+  async updateKubeconfig(kubeconfigId, kubeconfigData) {
+    try {
+      const response = await this.api.put(`/api/admin/kubeconfigs/${kubeconfigId}`, kubeconfigData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Update kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update kubeconfig' };
+    }
+  }
+
+  async deleteKubeconfig(kubeconfigId) {
+    try {
+      const response = await this.api.delete(`/api/admin/kubeconfigs/${kubeconfigId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Delete kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete kubeconfig' };
+    }
+  }
+
+  async activateKubeconfig(kubeconfigId) {
+    try {
+      const response = await this.api.post(`/api/admin/kubeconfigs/${kubeconfigId}/activate`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Activate kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to activate kubeconfig' };
+    }
+  }
+
+  async testKubeconfig(kubeconfigId) {
+    try {
+      const response = await this.api.post(`/api/admin/kubeconfigs/${kubeconfigId}/test`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Test kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to test kubeconfig' };
+    }
+  }
+
+  async getActiveKubeconfig() {
+    try {
+      const response = await this.api.get('/api/admin/kubeconfigs/active');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get active kubeconfig error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get active kubeconfig' };
+    }
+  }
+
+  // API Keys endpoints
+  async getApiKeys() {
+    try {
+      const response = await this.api.get('/api/admin/api-keys');
+      return { success: true, apiKeys: response.data.api_keys };
+    } catch (error) {
+      console.error('Get API keys error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get API keys' };
+    }
+  }
+
+  async createApiKey(apiKeyData) {
+    try {
+      const response = await this.api.post('/api/admin/api-keys', apiKeyData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create API key error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to create API key' };
+    }
+  }
+
+  async updateApiKey(apiKeyId, apiKeyData) {
+    try {
+      const response = await this.api.put(`/api/admin/api-keys/${apiKeyId}`, apiKeyData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Update API key error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update API key' };
+    }
+  }
+
+  async deleteApiKey(apiKeyId) {
+    try {
+      const response = await this.api.delete(`/api/admin/api-keys/${apiKeyId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Delete API key error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete API key' };
+    }
+  }
+
+  async activateApiKey(apiKeyId) {
+    try {
+      const response = await this.api.post(`/api/admin/api-keys/${apiKeyId}/activate`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Activate API key error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to activate API key' };
+    }
+  }
+
+  async getActiveApiKey(provider = 'openrouter') {
+    try {
+      const response = await this.api.get('/api/admin/api-keys/active', { 
+        params: { provider } 
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get active API key error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get active API key' };
+    }
+  }
+
+  // Chat endpoint
+  async chat(message, userId, sessionId = null) {
+    try {
+      const response = await this.api.post('/api/chat', {
+        message: message,
+        user_id: userId,
+        session_id: sessionId
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Chat error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to send message' };
+    }
+  }
+
+  // Session management
+  async createSession(userId, title = 'New Chat') {
+    try {
+      const response = await this.api.post('/api/user/sessions', {
+        user_id: userId,
+        title: title
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create session error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to create session' };
+    }
+  }
+
+  async updateSession(userId, sessionId, title) {
+    try {
+      const response = await this.api.put(`/api/user/sessions/${sessionId}`, {
+        user_id: userId,
+        title: title
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Update session error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update session' };
+    }
+  }
+
+  async deleteSession(userId, sessionId) {
+    try {
+      const response = await this.api.delete(`/api/user/sessions/${sessionId}`, {
+        data: { user_id: userId }
+      });
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Delete session error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete session' };
+    }
+  }
+
+  // User endpoints
+  async getUserPreferences(userId) {
+    try {
+      const response = await this.api.get('/api/user/preferences', {
+        params: { user_id: userId }
+      });
+      return { success: true, preferences: response.data.preferences };
+    } catch (error) {
+      console.error('Get preferences error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get preferences' };
+    }
+  }
+
+  async updateUserPreferences(userId, preferences) {
+    try {
+      await this.api.put('/api/user/preferences', {
+        user_id: userId,
+        ...preferences
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Update preferences error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update preferences' };
+    }
+  }
+
+  async getUserSessions(userId) {
+    try {
+      const response = await this.api.get('/api/user/sessions', {
+        params: { user_id: userId }
+      });
+      return { success: true, sessions: response.data.sessions };
+    } catch (error) {
+      console.error('Get sessions error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get sessions' };
+    }
+  }
+
+  async getUserHistory(userId, sessionId = null, limit = 50) {
+    try {
+      const params = sessionId ? { user_id: userId, session_id: sessionId, limit } : { user_id: userId, limit };
+      const response = await this.api.get('/api/user/history', { params });
+      return { success: true, history: response.data.history };
+    } catch (error) {
+      console.error('Get history error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get history' };
+    }
+  }
+
+  // Topology endpoints
+  async getTopologyNodes() {
+    try {
+      const response = await this.api.get('/api/topology/nodes');
+      return { success: true, nodes: response.data.nodes, timestamp: response.data.timestamp };
+    } catch (error) {
+      console.error('Get topology nodes error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get topology nodes' };
+    }
+  }
+
+  async getNamespaces() {
+    try {
+      const response = await this.api.get('/api/topology/namespaces');
+      return { success: true, namespaces: response.data.namespaces };
+    } catch (error) {
+      console.error('Get namespaces error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get namespaces' };
+    }
+  }
+
+  async getTopologyPods(namespace = 'all') {
+    try {
+      const params = namespace !== 'all' ? { namespace } : {};
+      const response = await this.api.get('/api/topology/pods', { params });
+      return { success: true, pods: response.data.pods, timestamp: response.data.timestamp };
+    } catch (error) {
+      console.error('Get topology pods error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get topology pods' };
+    }
+  }
+
+  // LLM Configuration endpoints
+  async getSupportedLLMProviders() {
+    try {
+      const response = await this.api.get('/api/admin/llm/providers');
+      return { success: true, providers: response.data.providers };
+    } catch (error) {
+      console.error('Get supported LLM providers error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get supported LLM providers' };
+    }
+  }
+
+  async getLLMConfigs() {
+    try {
+      const response = await this.api.get('/api/admin/llm/configs');
+      return { success: true, configs: response.data.configs };
+    } catch (error) {
+      console.error('Get LLM configs error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get LLM configurations' };
+    }
+  }
+
+  async createLLMConfig(configData) {
+    try {
+      const response = await this.api.post('/api/admin/llm/configs', configData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Create LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to create LLM configuration' };
+    }
+  }
+
+  async updateLLMConfig(configId, configData) {
+    try {
+      const response = await this.api.put(`/api/admin/llm/configs/${configId}`, configData);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Update LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update LLM configuration' };
+    }
+  }
+
+  async deleteLLMConfig(configId) {
+    try {
+      const response = await this.api.delete(`/api/admin/llm/configs/${configId}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Delete LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete LLM configuration' };
+    }
+  }
+
+  async activateLLMConfig(configId) {
+    try {
+      const response = await this.api.post(`/api/admin/llm/configs/${configId}/activate`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Activate LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to activate LLM configuration' };
+    }
+  }
+
+  async testLLMConfig(configId) {
+    try {
+      const response = await this.api.post(`/api/admin/llm/configs/${configId}/test`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Test LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to test LLM configuration' };
+    }
+  }
+
+  async getActiveLLMConfig() {
+    try {
+      const response = await this.api.get('/api/admin/llm/configs/active');
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('Get active LLM config error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get active LLM configuration' };
+    }
+  }
+
+  // Pod Browser endpoints
+  async getPods() {
+    try {
+      const response = await this.api.get('/api/pods');
+      return { success: true, namespaces: response.data.namespaces, timestamp: response.data.timestamp };
+    } catch (error) {
+      console.error('Get pods error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get pods' };
+    }
+  }
+
+  async getPodLogs(namespace, podName) {
+    try {
+      const response = await this.api.get(`/api/pods/${namespace}/${podName}/logs`);
+      return { 
+        success: true, 
+        logs: response.data.logs,
+        podName: response.data.pod_name,
+        namespace: response.data.namespace,
+        timestamp: response.data.timestamp
+      };
+    } catch (error) {
+      console.error('Get pod logs error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to get pod logs' };
+    }
+  }
+
+  async describePod(namespace, podName) {
+    try {
+      const response = await this.api.get(`/api/pods/${namespace}/${podName}/describe`);
+      return { 
+        success: true, 
+        description: response.data.description,
+        podName: response.data.pod_name,
+        namespace: response.data.namespace,
+        timestamp: response.data.timestamp
+      };
+    } catch (error) {
+      console.error('Describe pod error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to describe pod' };
+    }
+  }
+
+  async browsePodFiles(namespace, podName, path = '/') {
+    try {
+      const response = await this.api.get(`/api/pods/${namespace}/${podName}/browse`, {
+        params: { path: path || '/' }
+      });
+      return { 
+        success: true, 
+        files: response.data.files,
+        podName: response.data.pod_name,
+        namespace: response.data.namespace,
+        currentPath: response.data.current_path,
+        timestamp: response.data.timestamp
+      };
+    } catch (error) {
+      console.error('Browse pod files error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to browse pod files' };
+    }
+  }
+
+  async readPodFile(namespace, podName, filePath) {
+    try {
+      const response = await this.api.post(`/api/pods/${namespace}/${podName}/read`, {
+        file_path: filePath
+      });
+      return { 
+        success: true, 
+        content: response.data.content,
+        podName: response.data.pod_name,
+        namespace: response.data.namespace,
+        filePath: response.data.file_path,
+        timestamp: response.data.timestamp
+      };
+    } catch (error) {
+      console.error('Read pod file error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to read pod file' };
+    }
+  }
+}
+
+export const apiService = new ApiService();
