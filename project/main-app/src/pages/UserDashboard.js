@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { LogOut, Cpu, MessageSquare, Send, Loader2, Plus, Edit2, Trash2, ChevronLeft, Network, Server } from 'lucide-react';
+import { LogOut, Cpu, MessageSquare, Send, Loader2, Plus, Edit2, Trash2, ChevronLeft, Network, Server, Key } from 'lucide-react';
 import { apiService } from '../services/apiService';
+import ChangePasswordModal from '../components/ChangePasswordModal';
 
 // Import new libraries for markdown rendering and syntax highlighting
 import ReactMarkdown from 'react-markdown';
@@ -21,6 +22,7 @@ const UserDashboard = ({ user, onLogout }) => {
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [streamingStatus, setStreamingStatus] = useState(null); // Track streaming state
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -575,6 +577,13 @@ const handleSendMessage = async (e) => {
                   Pod Browser
                 </a>
                 <button
+                  onClick={() => setShowChangePasswordModal(true)}
+                  className="k8s-button-secondary flex items-center gap-2"
+                >
+                  <Key className="w-4 h-4" />
+                  Change Password
+                </button>
+                <button
                   onClick={onLogout}
                   className="k8s-button-secondary flex items-center gap-2"
                 >
@@ -736,6 +745,22 @@ const handleSendMessage = async (e) => {
           {error}
         </div>
       )}
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={showChangePasswordModal}
+        onClose={(message) => {
+          setShowChangePasswordModal(false);
+          if (message) {
+            setError('');
+            alert(message);
+          }
+        }}
+        onError={(errorMessage) => {
+          setError(errorMessage);
+        }}
+        username={user.username}
+      />
     </div>
   );
 };

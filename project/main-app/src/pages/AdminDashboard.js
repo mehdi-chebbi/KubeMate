@@ -7,10 +7,12 @@ import UserManagement from '../components/admin/UserManagement';
 import KubeconfigManagement from '../components/admin/KubeconfigManagement';
 import ActivityLogs from '../components/admin/ActivityLogs';
 import ApiKeyManagement from '../components/admin/ApiKeyManagement';
+import ChangePasswordModal from '../components/ChangePasswordModal';
 
 const AdminDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   const handleError = (errorMessage, type = 'error') => {
     if (type === 'success') {
@@ -52,6 +54,13 @@ const AdminDashboard = ({ user, onLogout }) => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowChangePasswordModal(true)}
+                className="k8s-button-secondary flex items-center gap-2"
+              >
+                <Key className="w-4 h-4" />
+                Change Password
+              </button>
               <a
                 href="/topology"
                 className="k8s-button-secondary flex items-center gap-2"
@@ -177,6 +186,21 @@ const AdminDashboard = ({ user, onLogout }) => {
           </div>
         )}
       </div>
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={showChangePasswordModal}
+        onClose={(message) => {
+          setShowChangePasswordModal(false);
+          if (message) {
+            handleError(message, 'success');
+          }
+        }}
+        onError={(errorMessage) => {
+          handleError(errorMessage);
+        }}
+        username={user.username}
+      />
     </div>
   );
 };

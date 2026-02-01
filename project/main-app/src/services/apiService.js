@@ -82,6 +82,54 @@ class ApiService {
     }
   }
 
+  async changeUserPassword(userId, newPassword) {
+    try {
+      const response = await this.api.put(`/api/admin/users/${userId}/password`, {
+        new_password: newPassword
+      });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Change user password error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to change user password' };
+    }
+  }
+
+  async updateUser(userId, userData) {
+    try {
+      const response = await this.api.put(`/api/admin/users/${userId}`, userData);
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Update user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to update user' };
+    }
+  }
+
+  async deleteUser(userId) {
+    try {
+      const response = await this.api.delete(`/api/admin/users/${userId}`);
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Delete user error:', error);
+      return { success: false, error: error.response?.data?.error || 'Failed to delete user' };
+    }
+  }
+
+  async changeOwnPassword(currentPassword, newPassword) {
+    try {
+      const response = await this.api.put('/api/user/password', {
+        current_password: currentPassword,
+        new_password: newPassword
+      });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Change own password error:', error);
+      if (error.response?.status === 401) {
+        return { success: false, error: 'Current password is incorrect' };
+      }
+      return { success: false, error: error.response?.data?.error || 'Failed to change password' };
+    }
+  }
+
   async getActivityLogs(userId = null, limit = 100) {
     try {
       const params = userId ? { user_id: userId, limit } : { limit };
@@ -92,6 +140,7 @@ class ApiService {
       return { success: false, error: error.response?.data?.error || 'Failed to get activity logs' };
     }
   }
+
 
   // Kubeconfig endpoints
   async getKubeconfigs() {

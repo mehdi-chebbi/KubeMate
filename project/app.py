@@ -561,21 +561,100 @@ def change_user_password(user_id):
     """Change user password (admin only)"""
     try:
         data = request.get_json()
-        
+
         if not data or 'new_password' not in data:
             return jsonify({'error': 'New password is required'}), 400
-        
+
         new_password = data['new_password']
         success = app.db.change_password(user_id, new_password)
-        
+
         if success:
             return jsonify({'message': f'Password changed for user {user_id}'})
         else:
             return jsonify({'error': 'Failed to change password'}), 500
-        
+
     except Exception as e:
         logger.error(f"Error changing password: {str(e)}")
         return jsonify({'error': 'Failed to change password'}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@require_admin_auth
+def update_user_info(user_id):
+    """Update user information (admin only)"""
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        username = data.get('username')
+        email = data.get('email')
+        role = data.get('role')
+
+        if not any([username, email, role]):
+            return jsonify({'error': 'At least one field must be provided'}), 400
+
+        success = app.db.update_user(user_id, username=username, email=email, role=role)
+
+        if success:
+            return jsonify({'message': 'User updated successfully'})
+        else:
+            return jsonify({'error': 'Failed to update user'}), 500
+
+    except Exception as e:
+        logger.error(f"Error updating user: {str(e)}")
+        return jsonify({'error': 'Failed to update user'}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@require_admin_auth
+def delete_user(user_id):
+    """Delete a user (admin only)"""
+    try:
+        # Prevent admin from deleting themselves
+        if user_id == request.current_user['id']:
+            return jsonify({'error': 'Cannot delete your own account'}), 400
+
+        success = app.db.delete_user(user_id)
+
+        if success:
+            return jsonify({'message': 'User deleted successfully'})
+        else:
+            return jsonify({'error': 'Failed to delete user'}), 500
+
+    except Exception as e:
+        logger.error(f"Error deleting user: {str(e)}")
+        return jsonify({'error': 'Failed to delete user'}), 500
+
+@app.route('/api/user/password', methods=['PUT'])
+@require_user_auth
+def change_own_password():
+    """Change own password (user authenticated)"""
+    try:
+        data = request.get_json()
+
+        if not data or 'current_password' not in data or 'new_password' not in data:
+            return jsonify({'error': 'Current password and new password are required'}), 400
+
+        current_password = data['current_password']
+        new_password = data['new_password']
+        user_id = request.current_user['id']
+
+        # Verify current password
+        if not app.db.verify_password(user_id, current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 401
+
+        # Change password
+        success = app.db.change_password(user_id, new_password)
+
+        if success:
+            return jsonify({'message': 'Password changed successfully'})
+        else:
+            return jsonify({'error': 'Failed to change password'}), 500
+
+    except Exception as e:
+        logger.error(f"Error changing own password: {str(e)}")
+        return jsonify({'error': 'Failed to change password'}), 500
+
 
 @app.route('/api/admin/logs', methods=['GET'])
 @require_admin_auth

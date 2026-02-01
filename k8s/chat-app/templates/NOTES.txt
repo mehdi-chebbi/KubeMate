@@ -2,25 +2,31 @@
 Post-install notes for chat-app
 */ -}}
 
-🎉 Your chat app is deployed in the "kubemate" namespace!
+🎉 Your Kubemate chat app is deployed in the "kubemate" namespace!
 
-Default info for testing:
+🔐 Default Admin Credentials (CHANGE IMMEDIATELY!):
+- Username: admin
+- Password: admin123
 
-- DB user: test
-- DB password: test123
-- Namespace: kubemate
+⚠️  IMPORTANT: Login immediately and change the default admin password!
 
-Port-forward to access services locally:
+Access the application:
 
-- Backend:
-  kubectl port-forward svc/service-backend 8080:80 -n kubemate
-- Frontend:
-  kubectl port-forward svc/service-frontend 3000:80 -n kubemate
-- DB (optional):
-  kubectl port-forward svc/service-db 5432:5432 -n kubemate
+Port-forward to access frontend locally:
+  kubectl port-forward svc/kubemate-frontend 3000:80 -n kubemate
 
-Check resources:
+Then open your browser to: http://localhost:3000
 
+Check deployment status:
   kubectl get pods -n kubemate
   kubectl get svc -n kubemate
-  kubectl get secrets -n kubemate
+
+View application logs:
+  # Backend logs
+  kubectl logs -f deployment/kubemate-backend -n kubemate
+
+  # Frontend logs
+  kubectl logs -f deployment/kubemate-frontend -n kubemate
+
+  # Database logs
+  kubectl logs -f deployment/kubemate-postgres -n kubemate

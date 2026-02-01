@@ -927,6 +927,106 @@ class Database:
             if conn:
                 cursor.close()
                 self._put_connection(conn)
+
+    def verify_password(self, user_id: int, current_password: str) -> bool:
+        """Verify user's current password"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cursor.execute("""
+                SELECT password_hash FROM users WHERE id = %s
+            """, (user_id,))
+            
+            user = cursor.fetchone()
+            
+            if not user:
+                logger.warning(f"User not found for password verification: {user_id}")
+                return False
+            
+            if bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+                logger.info(f"Password verified for user ID: {user_id}")
+                return True
+            else:
+                logger.warning(f"Password verification failed for user ID: {user_id}")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Error verifying password: {str(e)}")
+            return False
+        finally:
+            if conn:
+                cursor.close()
+                self._put_connection(conn)
+
+    def update_user(self, user_id: int, username: str = None, email: str = None, role: str = None) -> bool:
+        """Update user information (username, email, role)"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Build dynamic update query
+            updates = []
+            params = []
+
+            if username is not None:
+                updates.append("username = %s")
+                params.append(username)
+            if email is not None:
+                updates.append("email = %s")
+                params.append(email)
+            if role is not None:
+                updates.append("role = %s")
+                params.append(role)
+
+            if not updates:
+                return False  # Nothing to update
+
+            params.append(user_id)
+            query = f"UPDATE users SET {', '.join(updates)} WHERE id = %s"
+
+            cursor.execute(query, params)
+            conn.commit()
+            logger.info(f"User updated: ID {user_id}")
+            return True
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Failed to update user: {str(e)}")
+            return False
+        finally:
+            if conn:
+                cursor.close()
+                self._put_connection(conn)
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                DELETE FROM users WHERE id = %s
+            """, (user_id,))
+
+            conn.commit()
+            logger.info(f"User deleted: ID {user_id}")
+            return True
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Failed to delete user: {str(e)}")
+            return False
+        finally:
+            if conn:
+                cursor.close()
+                self._put_connection(conn)
+
     
     # ==================== USER PREFERENCES ====================
     
