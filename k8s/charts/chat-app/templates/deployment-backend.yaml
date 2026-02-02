@@ -15,6 +15,25 @@ spec:
       labels:
         app: kubemate-backend
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          until pg_isready -h kubemate-postgres -U $POSTGRES_USER -d $POSTGRES_DB; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+          echo "✅ PostgreSQL is ready!"
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: kubemate-secrets
+              key: db-user
+        - name: POSTGRES_DB
+          value: kubemate
       containers:
       - name: backend
         image: mehdino123/kubemate-back:latest

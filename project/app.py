@@ -259,7 +259,7 @@ def health_check():
                 # Use the existing app.k8s_client if it has the same config path
                 # or create a new one only if necessary
                 k8s_client_to_use = app.k8s_client
-                if hasattr(app.k8s_client, 'kubeconfig_path') and app.k8s_client.kubeconfig_path != active_kubeconfig['path']:
+                if app.k8s_client.kubeconfig_path != active_kubeconfig['path']:
                     k8s_client_to_use = K8sClient(kubeconfig_path=active_kubeconfig['path'])
                 
                 result = k8s_client_to_use._run_kubectl_command(['cluster-info'], timeout=5)
@@ -1909,8 +1909,8 @@ def test_kubeconfig(kubeconfig_id):
             if result['success']:
                 # Update test result in database
                 app.db.update_kubeconfig_test_result(
-                    kubeconfig_id, 
-                    'success', 
+                    kubeconfig_id,
+                    'passed',
                     'Connection successful - cluster info retrieved'
                 )
                 

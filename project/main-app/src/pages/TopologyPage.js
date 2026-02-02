@@ -338,13 +338,7 @@ const TopologyPage = ({ user, onLogout }) => {
               >
                 Pods
               </button>
-              <button
-                onClick={() => setViewMode('services')}
-                className={`px-3 py-1 rounded ${viewMode === 'services' ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'}`}
-                disabled
-              >
-                Services (Coming Soon)
-              </button>
+        
             </div>
             
             {/* Namespace Filter for Pods */}
@@ -630,25 +624,7 @@ const TopologyPage = ({ user, onLogout }) => {
             ) : null}
           </div>
 
-          {/* Controls Hint */}
-          <div className="absolute bottom-4 left-4 bg-gray-800 bg-opacity-90 rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-2">Controls</h3>
-            <div className="space-y-1 text-xs text-gray-300">
-              {viewMode === 'nodes' ? (
-                <>
-                  <p>🖱️ Drag nodes to reorganize</p>
-                  <p>📊 Click sidebar for details</p>
-                </>
-              ) : viewMode === 'pods' ? (
-                <>
-                  <p>🖱️ Click nodes to see pod details</p>
-                  <p>📊 Click pods for container info</p>
-                  <p>🔍 Filter by namespace above</p>
-                  <p>⚡ Node colors show health status</p>
-                </>
-              ) : null}
-            </div>
-          </div>
+        
         </div>
 
         {/* Side Panel */}

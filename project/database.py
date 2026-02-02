@@ -2130,18 +2130,21 @@ class Database:
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
+
+            # Determine test_status based on success boolean
+            # LLM providers return "success": True/False, not a "status" key
+            status = 'passed' if test_result.get('success') else 'failed'
+
             cursor.execute("""
-                UPDATE api_keys 
+                UPDATE api_keys
                 SET test_status = %s, test_message = %s, last_tested = %s, updated_at = %s
                 WHERE id = %s
-            """, (test_result.get('status', 'failed'), 
-                  test_result.get('message', ''), 
+            """, (status, test_result.get('message', ''),
                   datetime.now(), datetime.now(), config_id))
-            
+
             conn.commit()
             return True
-            
+
         except Exception as e:
             if conn:
                 conn.rollback()

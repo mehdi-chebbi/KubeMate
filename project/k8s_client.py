@@ -41,7 +41,7 @@ class K8sClient:
         """Validate kubectl is accessible and can connect to cluster"""
         try:
             result = subprocess.run(
-                ['kubectl', 'cluster-info'],
+                self._get_kubectl_command(['cluster-info']),
                 capture_output=True,
                 text=True,
                 timeout=10

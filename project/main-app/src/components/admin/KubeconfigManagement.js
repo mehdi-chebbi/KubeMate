@@ -187,7 +187,8 @@ const KubeconfigManagement = ({ user, onError, onHealthUpdate }) => {
       const result = await apiService.testKubeconfig(kubeconfigId);
       if (result.success) {
         alert(result.data.message + (result.data.details?.output ? '\n\n' + result.data.details.output : ''));
-        loadKubeconfigs();
+        // Reload kubeconfigs to get updated test_status
+        await loadKubeconfigs();
       } else {
         onError(result.error);
       }

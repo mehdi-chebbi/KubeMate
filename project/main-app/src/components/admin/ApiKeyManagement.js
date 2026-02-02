@@ -205,9 +205,10 @@ const ApiKeyManagement = ({ user, onError }) => {
       if (result.success) {
         if (result.data.message) {
           const successMsg = result.data.message + (result.data.details?.output ? '\n\n' + result.data.details.output : '');
-          onError(successMsg, 'success');
+          alert(successMsg);
         }
-        loadApiKeys();
+        // Reload API keys to get updated test_status
+        await loadApiKeys();
       } else {
         onError(`Connection test failed: ${result.error}`);
       }
@@ -302,7 +303,7 @@ const ApiKeyManagement = ({ user, onError }) => {
   };
 
   const activeConfigs = apiKeys.filter(k => k.is_active).length;
-  const testedConfigs = apiKeys.filter(k => k.test_status === 'success').length;
+  const testedConfigs = apiKeys.filter(k => k.test_status === 'passed').length;
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -668,11 +669,11 @@ const ApiKeyManagement = ({ user, onError }) => {
                     {/* Test Status */}
                     {apiKey.test_status && (
                       <div className={`flex items-center gap-2 text-xs ${
-                        apiKey.test_status === 'success' ? 'text-k8s-green' :
+                        apiKey.test_status === 'passed' ? 'text-k8s-green' :
                         apiKey.test_status === 'failed' ? 'text-k8s-red' :
                         'text-k8s-gray'
                       }`}>
-                        {apiKey.test_status === 'success' ? (
+                        {apiKey.test_status === 'passed' ? (
                           <>
                             <CheckCircle className="w-3.5 h-3.5" />
                             Connection tested successfully
