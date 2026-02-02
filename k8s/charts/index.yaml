@@ -35,7 +35,7 @@ entries:
         - Issues: https://github.com/mehdi-chebbi/k8s-chat/issues
     apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-02-02T23:15:13.4097095+01:00"
+    created: "2026-02-02T23:26:42.092471+01:00"
     description: 'Kubemate is an AI-powered Kubernetes assistant that combines natural
       language understanding, interactive visualization, and deep cluster inspection
       into one powerful tool.  Think of it as: ChatGPT meets kubectl meets K8s Dashboard
@@ -68,7 +68,7 @@ entries:
     - https://github.com/mehdi-chebbi/k8s-chat
     type: application
     urls:
-    - https://github.com/mehdi-chebbi/k8s-chat/releases/download/kubemate-1.0.0/kubemate-1.0.0.tgz
+    - https://github.com/mehdi-chebbi/KubeMate/releases/download/kubemate-1.0.0/kubemate-1.0.0.tgz
     version: 1.0.0
   - annotations:
       category: Infrastructure
@@ -104,7 +104,7 @@ entries:
         - Issues: https://github.com/mehdi-chebbi/k8s-chat/issues
     apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-02-02T23:15:13.4091854+01:00"
+    created: "2026-02-02T23:26:07.642708+01:00"
     description: 'Kubemate is an AI-powered Kubernetes assistant that combines natural
       language understanding, interactive visualization, and deep cluster inspection
       into one powerful tool.  Think of it as: ChatGPT meets kubectl meets K8s Dashboard
@@ -137,6 +137,6 @@ entries:
     - https://github.com/mehdi-chebbi/k8s-chat
     type: application
     urls:
-    - https://github.com/mehdi-chebbi/k8s-chat/releases/download/kubemate-1.0.0/kubemate-0.1.0.tgz
+    - https://github.com/mehdi-chebbi/KubeMate/releases/download/kubemate-1.0.0/kubemate-0.1.0.tgz
     version: 0.1.0
-generated: "2026-02-02T23:15:13.408603+01:00"
+generated: "2026-02-02T23:26:42.0911904+01:00"
