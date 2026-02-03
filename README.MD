@@ -179,7 +179,8 @@ src/
 
 ### Kubernetes
 
-**1. Add the Helm repository **
+**1. Add the Helm repository**
+
 
 ```bash
 helm repo add kubemate https://mehdi-chebbi.github.io/KubeMate/
@@ -193,7 +194,7 @@ helm repo update
 helm install kubemate kubemate/kubemate
 ```
 
-**2. Accessing KubeMate **
+**2. Accessing KubeMate**
 
 ```bash
 kubectl port-forward svc/kubemate-frontend 3000:80 -n kubemate
