@@ -170,17 +170,54 @@ src/
 - Docker and Docker Compose
 - Kubernetes cluster (or local minikube/kind)
 - kubectl configured with cluster access
-- OpenRouter API key (for LLM features)
+- OpenRouter API key or self hosted model (for LLM features)
 
 ---
 
 ### Installation
 
+
+### Kubernetes
+
+**1. Add the Helm repository **
+
+```bash
+helm repo add kubemate https://mehdi-chebbi.github.io/KubeMate/
+```
+
+```bash
+helm repo update
+```
+
+```bash
+helm install kubemate kubemate/kubemate
+```
+
+**2. Accessing KubeMate **
+
+```bash
+kubectl port-forward svc/kubemate-frontend 3000:80 -n kubemate
+```
+
+Then open your browser to:
+```bash
+http://localhost:3000
+```
+
+**3. Default credentials**
+
+- Username: `admin`
+- Password: `admin123`
+
+⚠️ **Change these immediately after first login!**
+
+### Docker Compose
+
 **1. Clone the repository**
 
 ```bash
-git clone https://github.com/mehdi-chebbi/k8s-chat.git
-cd k8s-chat
+git clone https://github.com/mehdi-chebbi/kubemate.git
+cd kubemate
 ```
 
 **2. Configure environment variables**
@@ -193,15 +230,6 @@ POSTGRES_DB=k8s_bot
 POSTGRES_USER=bot_user
 POSTGRES_PASSWORD=bot_password_123
 
-# LLM API
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-
-# Flask
-FLASK_ENV=development
-SECRET_KEY=your_secret_key_here
-
-# Optional: Encryption key for persistence
-K8S_BOT_ENCRYPTION_KEY=your_fernet_key_here
 ```
 
 **3. Start the application**
