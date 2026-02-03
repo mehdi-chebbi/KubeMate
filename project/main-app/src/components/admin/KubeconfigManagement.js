@@ -377,7 +377,7 @@ const KubeconfigManagement = ({ user, onError, onHealthUpdate }) => {
                   {showTooltip.cluster_url && (
                     <div className="p-2 bg-k8s-blue/10 border border-k8s-blue/30 rounded-lg text-xs text-k8s-gray animate-slideDown">
                       The API server endpoint URL of your Kubernetes cluster. You can get this by running:<br />
-                      <code className="block mt-1 p-1.5 bg-k8s-dark/50 rounded font-mono text-xs text-k8s-cyan">kubectl config view --minify -o jsonpath='&#123;.clusters[0].cluster.server&#123;'</code>
+                      <code className="block mt-1 p-1.5 bg-k8s-dark/50 rounded font-mono text-xs text-k8s-cyan">kubectl config view --minify -o jsonpath='&#123;.clusters[0].cluster.server&#125;'</code>
                     </div>
                   )}
                   <input
@@ -447,7 +447,7 @@ const KubeconfigManagement = ({ user, onError, onHealthUpdate }) => {
                     <div className="p-2 bg-k8s-blue/10 border border-k8s-blue/30 rounded-lg text-xs text-k8s-gray animate-slideDown">
                       The Certificate Authority certificate for your cluster. Get it by running:<br />
                       <code className="block mt-1 p-1.5 bg-k8s-dark/50 rounded font-mono text-xs text-k8s-cyan">
-                        kubectl config view --raw -o jsonpath="&#123;.clusters[0].cluster.certificate-authority-data&#123;"
+                        kubectl config view --raw -o jsonpath="&#123;.clusters[0].cluster.certificate-authority-data&#125;"
                       </code>
                     </div>
                   )}
